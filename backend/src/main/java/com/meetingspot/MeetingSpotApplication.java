@@ -1,0 +1,13 @@
+package com.meetingspot;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class MeetingSpotApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(MeetingSpotApplication.class, args);
+	}
+
+}

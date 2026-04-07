@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: meeting-spot
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  datasource:
+    url: jdbc:h2:mem:meetingspot
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+server:
+  port: 8080
+
+kakao:
+  api:
+    rest-key: ${KAKAO_REST_API_KEY}
+    base-url: https://dapi.kakao.com
+
+logging:
+  level:
+    com.meetingspot: DEBUG
