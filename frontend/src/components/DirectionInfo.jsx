@@ -1,19 +1,7 @@
 import { useState } from 'react'
+import { formatSeconds, formatDistance } from '../utils/format'
 
 const MARKER_COLORS = ['#3B82F6', '#EF4444', '#22C55E', '#A855F7', '#F97316', '#EC4899']
-
-function formatSeconds(seconds) {
-  if (seconds < 0) return '-'
-  const m = Math.floor(seconds / 60)
-  if (m >= 60) return `${Math.floor(m / 60)}시간 ${m % 60}분`
-  return `${m}분`
-}
-
-function formatDistance(meters) {
-  if (meters < 0) return '-'
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`
-  return `${meters}m`
-}
 
 // mode: 'car' | 'traffic'
 // 목적지는 실제 역 좌표(stationLat, stationLng) 사용
@@ -93,7 +81,7 @@ function RouteList({ directions, loading, users, midpoint, mode }) {
   )
 }
 
-export default function DirectionInfo({ carDirections, carLoading, users, midpoint }) {
+export default function DirectionInfo({ carDirections, carLoading, transitDirections, users, midpoint }) {
   const [tab, setTab] = useState('car')
 
   return (
@@ -116,7 +104,7 @@ export default function DirectionInfo({ carDirections, carLoading, users, midpoi
       </div>
 
       <RouteList
-        directions={tab === 'car' ? carDirections : null}
+        directions={tab === 'car' ? carDirections : transitDirections}
         loading={tab === 'car' ? carLoading : false}
         users={users}
         midpoint={midpoint}

@@ -4,6 +4,7 @@ import UserCountSelector from '../components/UserCountSelector'
 import LocationInput from '../components/LocationInput'
 import Map from '../components/Map'
 import { calcMidpoint } from '../api/midpointApi'
+import { formatSeconds } from '../utils/format'
 
 function makeUsers(count) {
   return Array.from({ length: count }, (_, i) => ({
@@ -104,7 +105,28 @@ export default function Home() {
             <h2 className="text-lg font-bold text-amber-800 mb-1">
               📍 {midpoint.nearestStation || '중간지점'}
             </h2>
-            <p className="text-sm text-amber-700 mb-4">{midpoint.address}</p>
+            <p className="text-sm text-amber-700 mb-3">{midpoint.address}</p>
+
+            {/* 사용자별 대중교통 소요시간 */}
+            {midpoint.transitTimes && midpoint.transitTimes.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-semibold text-amber-600 mb-1">🚇 대중교통 소요시간</p>
+                <div className="flex flex-col gap-1">
+                  {midpoint.transitTimes.map((t, i) => (
+                    <div key={i} className="flex justify-between text-xs text-amber-800">
+                      <span>{t.userName}</span>
+                      <span className="font-semibold">
+                        {t.durationSeconds > 0 ? formatSeconds(t.durationSeconds) : '-'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {midpoint.transitFallback && (
+              <p className="text-xs text-amber-500 mb-3">* 직선거리 기준으로 선택됨</p>
+            )}
+
             <button
               onClick={handleNext}
               className="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors"

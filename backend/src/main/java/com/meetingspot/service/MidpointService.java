@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -16,9 +15,10 @@ import java.util.stream.Collectors;
 public class MidpointService {
 
     private final WebClient kakaoWebClient;
+    private final TransitService transitService;
 
-    // 역 정보를 담는 내부 레코드
     private record StationInfo(String name, double lat, double lng) {}
+    private record ScoredStation(StationInfo station, int[] durations) {}
 
     public MidpointResponse calculate(MidpointRequest request) {
         List<MidpointRequest.LocationDto> locations = request.getLocations();
@@ -27,91 +27,125 @@ public class MidpointService {
         double avgLat = locations.stream().mapToDouble(MidpointRequest.LocationDto::getLat).average().orElse(0);
         double avgLng = locations.stream().mapToDouble(MidpointRequest.LocationDto::getLng).average().orElse(0);
 
-        // 2) 출발지 간 최대 거리 계산 → 탐색 반경 동적 결정
-        double maxDist = 0;
-        for (MidpointRequest.LocationDto a : locations) {
-            for (MidpointRequest.LocationDto b : locations) {
-                maxDist = Math.max(maxDist, haversine(a.getLat(), a.getLng(), b.getLat(), b.getLng()));
-            }
-        }
-        int searchRadius = (int) Math.min(Math.max(maxDist * 0.4, 3000), 20000); // 최소 3km, 최대 20km
+        // 2) 평균 좌표 주변 지하철역 후보 3개 탐색
+        List<StationInfo> candidates = getCandidateStations(avgLat, avgLng);
 
-        // 3) 평균 좌표 주변에서 역 탐색 (중간 지역 커버)
-        Map<String, StationInfo> candidateMap = new LinkedHashMap<>();
-        List<StationInfo> centerStations = getNearbyStations(avgLat, avgLng, searchRadius);
-        for (StationInfo s : centerStations) {
-            candidateMap.putIfAbsent(s.name(), s);
-        }
-
-        // 4) 후보가 부족하면 각 출발지 주변도 추가
-        if (candidateMap.size() < 5) {
-            for (MidpointRequest.LocationDto loc : locations) {
-                List<StationInfo> stations = getNearbyStations(loc.getLat(), loc.getLng(), 5000);
-                for (StationInfo s : stations) {
-                    candidateMap.putIfAbsent(s.name(), s);
+        if (!candidates.isEmpty()) {
+            try {
+                // 3) 대중교통 소요시간 기반 최적 역 선택
+                ScoredStation scored = selectByMinMaxTransitTime(candidates, locations);
+                if (scored != null) {
+                    String address = getAddressFromCoords(scored.station().lat(), scored.station().lng());
+                    log.debug("대중교통 기반 선택: name={}, lat={}, lng={}",
+                            scored.station().name(), scored.station().lat(), scored.station().lng());
+                    return MidpointResponse.builder()
+                            .lat(scored.station().lat())
+                            .lng(scored.station().lng())
+                            .address(address)
+                            .nearestStation(scored.station().name())
+                            .stationLat(scored.station().lat())
+                            .stationLng(scored.station().lng())
+                            .transitTimes(buildTransitTimes(locations, scored.durations()))
+                            .transitFallback(false)
+                            .build();
                 }
+            } catch (Exception e) {
+                log.warn("대중교통 기반 선택 실패 — 거리 기반 fallback 사용: {}", e.getMessage());
             }
-        }
 
-        if (candidateMap.isEmpty()) {
-            // fallback: 평균 좌표 + 주소
-            String address = getAddressFromCoords(avgLat, avgLng);
-            log.warn("후보 역 없음 - 평균 좌표 fallback: lat={}, lng={}", avgLat, avgLng);
+            // fallback: 가장 가까운 역 (첫 번째 결과)
+            StationInfo nearest = candidates.get(0);
+            String address = getAddressFromCoords(nearest.lat(), nearest.lng());
+            log.debug("거리 기반 fallback: name={}", nearest.name());
             return MidpointResponse.builder()
-                    .lat(avgLat).lng(avgLng).address(address)
-                    .nearestStation(null).stationLat(avgLat).stationLng(avgLng)
+                    .lat(nearest.lat()).lng(nearest.lng())
+                    .address(address)
+                    .nearestStation(nearest.name())
+                    .stationLat(nearest.lat()).stationLng(nearest.lng())
+                    .transitTimes(null)
+                    .transitFallback(true)
                     .build();
         }
 
-        // minimax: 가장 멀리서 오는 사람의 거리가 최소인 역 선택 (가장 공평)
-        StationInfo best = candidateMap.values().stream()
-                .min(Comparator.comparingDouble(s ->
-                        locations.stream()
-                                .mapToDouble(loc -> haversine(loc.getLat(), loc.getLng(), s.lat(), s.lng()))
-                                .max()
-                                .orElse(Double.MAX_VALUE)
-                ))
-                .orElseThrow();
-
-        String address = getAddressFromCoords(best.lat(), best.lng());
-
-        log.debug("선택된 중간역: name={}, lat={}, lng={}", best.name(), best.lat(), best.lng());
-
+        // 최종 fallback: 평균 좌표
+        String address = getAddressFromCoords(avgLat, avgLng);
+        log.warn("역 없음 - 평균 좌표 fallback: lat={}, lng={}", avgLat, avgLng);
         return MidpointResponse.builder()
-                .lat(best.lat())
-                .lng(best.lng())
-                .address(address)
-                .nearestStation(best.name())
-                .stationLat(best.lat())
-                .stationLng(best.lng())
+                .lat(avgLat).lng(avgLng).address(address)
+                .nearestStation(null).stationLat(avgLat).stationLng(avgLng)
+                .transitTimes(null).transitFallback(true)
                 .build();
     }
 
+    private ScoredStation selectByMinMaxTransitTime(List<StationInfo> candidates,
+                                                     List<MidpointRequest.LocationDto> users) {
+        StationInfo best = null;
+        int[] bestDurations = null;
+        int bestScore = Integer.MAX_VALUE;
+
+        for (StationInfo station : candidates) {
+            int[] durations = transitService.getAllTransitDurations(users, station.lng(), station.lat()).block();
+            if (durations == null) continue;
+
+            boolean anyValid = Arrays.stream(durations).anyMatch(d -> d >= 0);
+            if (!anyValid) continue;
+
+            // 최대 소요시간 최소화 (공평성 기준), 실패(-1)는 MAX_VALUE로 처리
+            int maxTime = Arrays.stream(durations)
+                    .map(d -> d < 0 ? Integer.MAX_VALUE : d)
+                    .max().orElse(Integer.MAX_VALUE);
+
+            log.debug("후보 역 '{}': maxTransitTime={}초", station.name(), maxTime);
+
+            if (maxTime < bestScore) {
+                bestScore = maxTime;
+                best = station;
+                bestDurations = durations;
+            }
+        }
+
+        return best != null ? new ScoredStation(best, bestDurations) : null;
+    }
+
+    private List<MidpointResponse.UserTransitTime> buildTransitTimes(
+            List<MidpointRequest.LocationDto> users, int[] durations) {
+        List<MidpointResponse.UserTransitTime> result = new ArrayList<>();
+        for (int i = 0; i < users.size(); i++) {
+            result.add(MidpointResponse.UserTransitTime.builder()
+                    .userName(users.get(i).getName())
+                    .durationSeconds(i < durations.length ? durations[i] : -1)
+                    .build());
+        }
+        return result;
+    }
+
     @SuppressWarnings("unchecked")
-    private List<StationInfo> getNearbyStations(double lat, double lng, int radius) {
+    private List<StationInfo> getCandidateStations(double lat, double lng) {
         try {
             Map<String, Object> response = kakaoWebClient.get()
-                    .uri("/v2/local/search/keyword.json?query=지하철역&x={lng}&y={lat}&radius={radius}&sort=distance&size=15",
-                            lng, lat, radius)
+                    .uri("/v2/local/search/keyword.json?query=지하철역&x={lng}&y={lat}&radius=5000&sort=distance&size=3",
+                            lng, lat)
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block();
 
-            if (response == null) return Collections.emptyList();
+            if (response == null) return List.of();
             List<Map<String, Object>> documents = (List<Map<String, Object>>) response.get("documents");
-            if (documents == null) return Collections.emptyList();
+            if (documents == null || documents.isEmpty()) return List.of();
 
-            return documents.stream()
-                    .map(doc -> new StationInfo(
-                            (String) doc.get("place_name"),
-                            Double.parseDouble((String) doc.get("y")),
-                            Double.parseDouble((String) doc.get("x"))
-                    ))
-                    .collect(Collectors.toList());
+            List<StationInfo> stations = new ArrayList<>();
+            for (Map<String, Object> doc : documents) {
+                stations.add(new StationInfo(
+                        (String) doc.get("place_name"),
+                        Double.parseDouble((String) doc.get("y")),
+                        Double.parseDouble((String) doc.get("x"))
+                ));
+            }
+            return stations;
 
         } catch (Exception e) {
-            log.error("지하철역 조회 실패: lat={}, lng={}", lat, lng, e);
-            return Collections.emptyList();
+            log.error("지하철역 후보 조회 실패: lat={}, lng={}", lat, lng, e);
+            return List.of();
         }
     }
 
@@ -137,16 +171,5 @@ public class MidpointService {
             log.error("주소 조회 실패", e);
         }
         return "주소 정보 없음";
-    }
-
-    // Haversine 공식: 두 좌표 간 직선거리(m)
-    private double haversine(double lat1, double lng1, double lat2, double lng2) {
-        final double R = 6371000;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 }
