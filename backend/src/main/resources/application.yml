@@ -21,6 +21,11 @@ kakao:
     rest-key: ${KAKAO_REST_API_KEY}
     base-url: https://dapi.kakao.com
 
+odsay:
+  api:
+    key: ${ODSAY_API_KEY}
+    base-url: https://api.odsay.com
+
 logging:
   level:
     com.meetingspot: DEBUG

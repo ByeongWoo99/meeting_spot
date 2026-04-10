@@ -14,6 +14,12 @@ public class KakaoApiConfig {
     @Value("${kakao.api.base-url}")
     private String baseUrl;
 
+    @Value("${odsay.api.key}")
+    private String odsayApiKey;
+
+    @Value("${odsay.api.base-url}")
+    private String odsayBaseUrl;
+
     @Bean
     public WebClient kakaoWebClient() {
         return WebClient.builder()
@@ -27,6 +33,14 @@ public class KakaoApiConfig {
         return WebClient.builder()
                 .baseUrl("https://apis-navi.kakaomobility.com")
                 .defaultHeader("Authorization", "KakaoAK " + restApiKey)
+                .build();
+    }
+
+    @Bean
+    public WebClient odsayWebClient() {
+        return WebClient.builder()
+                .baseUrl(odsayBaseUrl)
+                .defaultHeader("Referer", "http://localhost:5173")
                 .build();
     }
 }

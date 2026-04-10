@@ -91,6 +91,12 @@ export default function Result() {
             <DirectionInfo
               carDirections={carDirections}
               carLoading={carLoading}
+              transitDirections={midpoint?.transitTimes?.map(t => ({
+                userName: t.userName,
+                duration: t.durationSeconds,
+                distance: -1,
+                tollFee: 0,
+              }))}
               users={users}
               midpoint={midpoint}
             />
