@@ -32,8 +32,8 @@ public class MidpointService {
 
         if (!candidates.isEmpty()) {
             try {
-                // 3) 대중교통 소요시간 기반 최적 역 선택
-                ScoredStation scored = selectByMinMaxTransitTime(candidates, locations);
+                // 3) 대중교통 소요시간 기반 최적 역 선택 (복합 점수제)
+                ScoredStation scored = selectByCompositeScore(candidates, locations);
                 if (scored != null) {
                     String address = getAddressFromCoords(scored.station().lat(), scored.station().lng());
                     log.debug("대중교통 기반 선택: name={}, lat={}, lng={}",
@@ -77,28 +77,44 @@ public class MidpointService {
                 .build();
     }
 
-    private ScoredStation selectByMinMaxTransitTime(List<StationInfo> candidates,
-                                                     List<MidpointRequest.LocationDto> users) {
+    private ScoredStation selectByCompositeScore(List<StationInfo> candidates,
+                                                   List<MidpointRequest.LocationDto> users) {
         StationInfo best = null;
         int[] bestDurations = null;
-        int bestScore = Integer.MAX_VALUE;
+        double bestScore = Double.MAX_VALUE;
 
         for (StationInfo station : candidates) {
             int[] durations = transitService.getAllTransitDurations(users, station.lng(), station.lat()).block();
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             if (durations == null) continue;
 
             boolean anyValid = Arrays.stream(durations).anyMatch(d -> d >= 0);
-            if (!anyValid) continue;
+            if (!anyValid) {
+                log.warn("후보 역 '{}': 모든 OdSay 호출 실패 (전부 -1), 스킵", station.name());
+                continue;
+            }
 
-            // 최대 소요시간 최소화 (공평성 기준), 실패(-1)는 MAX_VALUE로 처리
-            int maxTime = Arrays.stream(durations)
-                    .map(d -> d < 0 ? Integer.MAX_VALUE : d)
-                    .max().orElse(Integer.MAX_VALUE);
+            // 실패(-1)는 2시간(7200초)으로 대체하여 해당 후보역 순위를 낮춤
+            double[] times = Arrays.stream(durations)
+                    .mapToDouble(d -> d < 0 ? 7200.0 : d)
+                    .toArray();
 
-            log.debug("후보 역 '{}': maxTransitTime={}초", station.name(), maxTime);
+            double maxTime = Arrays.stream(times).max().orElse(Double.MAX_VALUE);
+            double mean = Arrays.stream(times).average().orElse(0);
+            // 표준편차(variance의 제곱근): maxTime과 동일한 단위(초)로 공정성 측정
+            double stdDev = Math.sqrt(Arrays.stream(times)
+                    .map(t -> Math.pow(t - mean, 2))
+                    .average()
+                    .orElse(0));
 
-            if (maxTime < bestScore) {
-                bestScore = maxTime;
+            // 복합 점수: 표준편차 60% + 최대 소요시간 40% (균등성 중심)
+            double score = 0.4 * maxTime + 0.6 * stdDev;
+
+            log.debug("후보 역 '{}': maxTime={}초, stdDev={}초, compositeScore={}",
+                    station.name(), (int) maxTime, Math.round(stdDev), Math.round(score));
+
+            if (score < bestScore) {
+                bestScore = score;
                 best = station;
                 bestDurations = durations;
             }
