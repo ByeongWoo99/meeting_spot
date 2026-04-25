@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -18,7 +19,7 @@ public class MidpointService {
     private final TransitService transitService;
 
     private record StationInfo(String name, double lat, double lng) {}
-    private record ScoredStation(StationInfo station, int[] durations) {}
+    private record ScoredStation(StationInfo station, int[] durations, double score) {}
 
     public MidpointResponse calculate(MidpointRequest request) {
         List<MidpointRequest.LocationDto> locations = request.getLocations();
@@ -32,22 +33,28 @@ public class MidpointService {
 
         if (!candidates.isEmpty()) {
             try {
-                // 3) 대중교통 소요시간 기반 최적 역 선택 (복합 점수제)
-                ScoredStation scored = selectByCompositeScore(candidates, locations);
-                if (scored != null) {
-                    String address = getAddressFromCoords(scored.station().lat(), scored.station().lng());
-                    log.debug("대중교통 기반 선택: name={}, lat={}, lng={}",
-                            scored.station().name(), scored.station().lat(), scored.station().lng());
-                    return MidpointResponse.builder()
-                            .lat(scored.station().lat())
-                            .lng(scored.station().lng())
-                            .address(address)
-                            .nearestStation(scored.station().name())
-                            .stationLat(scored.station().lat())
-                            .stationLng(scored.station().lng())
-                            .transitTimes(buildTransitTimes(locations, scored.durations()))
-                            .transitFallback(false)
-                            .build();
+                // 3) 대중교통 소요시간 기반 상위 2개 역 선택 (복합 점수제)
+                List<ScoredStation> top2 = selectByCompositeScore(candidates, locations);
+                if (!top2.isEmpty()) {
+                    List<MidpointResponse.Candidate> candidateList = new ArrayList<>();
+                    for (int i = 0; i < top2.size(); i++) {
+                        ScoredStation sc = top2.get(i);
+                        String addr = getAddressFromCoords(sc.station().lat(), sc.station().lng());
+                        log.debug("후보 {}위: name={}", i + 1, sc.station().name());
+                        candidateList.add(MidpointResponse.Candidate.builder()
+                                .rank(i + 1)
+                                .nearestStation(sc.station().name())
+                                .lat(sc.station().lat())
+                                .lng(sc.station().lng())
+                                .address(addr)
+                                .stationLat(sc.station().lat())
+                                .stationLng(sc.station().lng())
+                                .transitTimes(buildTransitTimes(locations, sc.durations()))
+                                .transitFallback(false)
+                                .compositeScore(sc.score())
+                                .build());
+                    }
+                    return MidpointResponse.builder().candidates(candidateList).build();
                 }
             } catch (Exception e) {
                 log.warn("대중교통 기반 선택 실패 — 거리 기반 fallback 사용: {}", e.getMessage());
@@ -58,12 +65,14 @@ public class MidpointService {
             String address = getAddressFromCoords(nearest.lat(), nearest.lng());
             log.debug("거리 기반 fallback: name={}", nearest.name());
             return MidpointResponse.builder()
-                    .lat(nearest.lat()).lng(nearest.lng())
-                    .address(address)
-                    .nearestStation(nearest.name())
-                    .stationLat(nearest.lat()).stationLng(nearest.lng())
-                    .transitTimes(null)
-                    .transitFallback(true)
+                    .candidates(List.of(MidpointResponse.Candidate.builder()
+                            .rank(1)
+                            .nearestStation(nearest.name())
+                            .lat(nearest.lat()).lng(nearest.lng())
+                            .address(address)
+                            .stationLat(nearest.lat()).stationLng(nearest.lng())
+                            .transitTimes(null).transitFallback(true).compositeScore(0)
+                            .build()))
                     .build();
         }
 
@@ -71,17 +80,20 @@ public class MidpointService {
         String address = getAddressFromCoords(avgLat, avgLng);
         log.warn("역 없음 - 평균 좌표 fallback: lat={}, lng={}", avgLat, avgLng);
         return MidpointResponse.builder()
-                .lat(avgLat).lng(avgLng).address(address)
-                .nearestStation(null).stationLat(avgLat).stationLng(avgLng)
-                .transitTimes(null).transitFallback(true)
+                .candidates(List.of(MidpointResponse.Candidate.builder()
+                        .rank(1)
+                        .nearestStation(null)
+                        .lat(avgLat).lng(avgLng)
+                        .address(address)
+                        .stationLat(avgLat).stationLng(avgLng)
+                        .transitTimes(null).transitFallback(true).compositeScore(0)
+                        .build()))
                 .build();
     }
 
-    private ScoredStation selectByCompositeScore(List<StationInfo> candidates,
-                                                   List<MidpointRequest.LocationDto> users) {
-        StationInfo best = null;
-        int[] bestDurations = null;
-        double bestScore = Double.MAX_VALUE;
+    private List<ScoredStation> selectByCompositeScore(List<StationInfo> candidates,
+                                                        List<MidpointRequest.LocationDto> users) {
+        List<ScoredStation> scored = new ArrayList<>();
 
         for (StationInfo station : candidates) {
             int[] durations = transitService.getAllTransitDurations(users, station.lng(), station.lat()).block();
@@ -101,7 +113,6 @@ public class MidpointService {
 
             double maxTime = Arrays.stream(times).max().orElse(Double.MAX_VALUE);
             double mean = Arrays.stream(times).average().orElse(0);
-            // 표준편차(variance의 제곱근): maxTime과 동일한 단위(초)로 공정성 측정
             double stdDev = Math.sqrt(Arrays.stream(times)
                     .map(t -> Math.pow(t - mean, 2))
                     .average()
@@ -113,14 +124,14 @@ public class MidpointService {
             log.debug("후보 역 '{}': maxTime={}초, stdDev={}초, compositeScore={}",
                     station.name(), (int) maxTime, Math.round(stdDev), Math.round(score));
 
-            if (score < bestScore) {
-                bestScore = score;
-                best = station;
-                bestDurations = durations;
-            }
+            scored.add(new ScoredStation(station, durations, score));
         }
 
-        return best != null ? new ScoredStation(best, bestDurations) : null;
+        // 점수 오름차순 정렬 후 상위 2개 반환
+        return scored.stream()
+                .sorted(Comparator.comparingDouble(ScoredStation::score))
+                .limit(2)
+                .collect(Collectors.toList());
     }
 
     private List<MidpointResponse.UserTransitTime> buildTransitTimes(
@@ -135,11 +146,16 @@ public class MidpointService {
         return result;
     }
 
+    private String extractBaseName(String name) {
+        int idx = name.indexOf("역");
+        return idx >= 0 ? name.substring(0, idx + 1) : name;
+    }
+
     @SuppressWarnings("unchecked")
     private List<StationInfo> getCandidateStations(double lat, double lng) {
         try {
             Map<String, Object> response = kakaoWebClient.get()
-                    .uri("/v2/local/search/keyword.json?query=지하철역&x={lng}&y={lat}&radius=5000&sort=distance&size=3",
+                    .uri("/v2/local/search/keyword.json?query=지하철역&x={lng}&y={lat}&radius=10000&sort=distance&size=6",
                             lng, lat)
                     .retrieve()
                     .bodyToMono(Map.class)
@@ -149,15 +165,22 @@ public class MidpointService {
             List<Map<String, Object>> documents = (List<Map<String, Object>>) response.get("documents");
             if (documents == null || documents.isEmpty()) return List.of();
 
+            // 호선·출구가 다른 동일 역 중복 제거 ("수원역 1호선" → "수원역" 기준)
             List<StationInfo> stations = new ArrayList<>();
+            Set<String> seen = new LinkedHashSet<>();
             for (Map<String, Object> doc : documents) {
-                stations.add(new StationInfo(
-                        (String) doc.get("place_name"),
-                        Double.parseDouble((String) doc.get("y")),
-                        Double.parseDouble((String) doc.get("x"))
-                ));
+                String placeName = (String) doc.get("place_name");
+                String baseName = extractBaseName(placeName);
+                if (seen.add(baseName)) {
+                    stations.add(new StationInfo(
+                            baseName,
+                            Double.parseDouble((String) doc.get("y")),
+                            Double.parseDouble((String) doc.get("x"))
+                    ));
+                }
             }
-            return stations;
+            // OdSay 호출 횟수 유지를 위해 유니크 역 최대 3개로 제한
+            return stations.stream().limit(3).collect(Collectors.toList());
 
         } catch (Exception e) {
             log.error("지하철역 후보 조회 실패: lat={}, lng={}", lat, lng, e);

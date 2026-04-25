@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { formatSeconds, formatDistance } from '../utils/format'
+import ShareModal from './ShareModal'
 
 const MARKER_COLORS = ['#3B82F6', '#EF4444', '#22C55E', '#A855F7', '#F97316', '#EC4899']
 
@@ -12,6 +13,8 @@ function buildKakaoUrl(mode, startName, startLat, startLng, endName, endLat, end
 }
 
 function RouteList({ directions, loading, users, midpoint, mode }) {
+  const [shareModal, setShareModal] = useState(null)
+
   if (loading) return <div className="text-center py-4 text-gray-400 text-xs">경로 계산 중...</div>
 
   const validUsers = (users || []).filter(u => u.lat && u.lng)
@@ -28,6 +31,7 @@ function RouteList({ directions, loading, users, midpoint, mode }) {
   const destName = midpoint?.address || midpoint?.nearestStation || '목적지'
 
   return (
+    <>
     <div className="flex flex-col gap-2">
       {validUsers.map((user, i) => {
         const color = MARKER_COLORS[i % MARKER_COLORS.length]
@@ -66,6 +70,12 @@ function RouteList({ directions, loading, users, midpoint, mode }) {
                 >
                   지도보기
                 </a>
+                <button
+                  onClick={() => setShareModal({ url, title: `${user.address} → ${destName} 경로`, description: '카카오맵에서 경로를 확인해보세요' })}
+                  className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-2 py-1 rounded-lg transition-colors flex-shrink-0"
+                >
+                  공유하기
+                </button>
               </div>
             </div>
             {mode === 'car' && dir?.duration > 0 && (
@@ -78,6 +88,15 @@ function RouteList({ directions, loading, users, midpoint, mode }) {
         )
       })}
     </div>
+    {shareModal && (
+      <ShareModal
+        url={shareModal.url}
+        title={shareModal.title}
+        description={shareModal.description}
+        onClose={() => setShareModal(null)}
+      />
+    )}
+    </>
   )
 }
 

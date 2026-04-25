@@ -44,4 +44,3 @@ export KAKAO_REST_API_KEY=your_rest_api_key
 ./gradlew bootRun
 ```
 
-접속: http://localhost:5173
