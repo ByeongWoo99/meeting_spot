@@ -54,23 +54,32 @@ export default function LocationInput({ index, value, onChange }) {
     })
   }
 
-  const colors = ['blue', 'red', 'green', 'purple', 'orange', 'pink']
+  const colors = ['#3B82F6', '#EF4444', '#22C55E', '#A855F7', '#F97316', '#EC4899']
   const color = colors[index % colors.length]
+  const isSelected = !!(value.lat && value.lng)
 
   return (
     <div ref={wrapperRef} className="relative mb-3">
       <div className="flex items-center gap-2">
-        <span className={`w-6 h-6 rounded-full bg-${color}-500 text-white text-xs flex items-center justify-center flex-shrink-0 font-bold`}>
+        <span
+          style={{ backgroundColor: color }}
+          className="w-6 h-6 rounded-full text-white text-xs flex items-center justify-center flex-shrink-0 font-bold"
+        >
           {index + 1}
         </span>
-        <input
-          type="text"
-          value={keyword}
-          onChange={handleInput}
-          onFocus={() => suggestions.length > 0 && setOpen(true)}
-          placeholder={`출발지 ${index + 1} 검색`}
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={keyword}
+            onChange={handleInput}
+            onFocus={() => suggestions.length > 0 && setOpen(true)}
+            placeholder={`출발지 ${index + 1} 검색`}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          {isSelected && (
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-base">✓</span>
+          )}
+        </div>
       </div>
 
       {open && suggestions.length > 0 && (

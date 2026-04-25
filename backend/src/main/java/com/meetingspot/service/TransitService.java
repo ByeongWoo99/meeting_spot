@@ -53,6 +53,14 @@ public class TransitService {
                         log.debug("OdSay 응답: {}", resp);
                         Map<String, Object> result = (Map<String, Object>) resp.get("result");
                         if (result == null) {
+                            Map<String, Object> error = (Map<String, Object>) resp.get("error");
+                            if (error != null) {
+                                Object code = error.get("code");
+                                if (code != null && Integer.parseInt(code.toString()) == -98) {
+                                    log.debug("OdSay -98: 700m 이내 도보 거리, 소요시간 0으로 처리");
+                                    return 0;
+                                }
+                            }
                             log.warn("OdSay 응답에 result 없음: {}", resp);
                             return -1;
                         }
