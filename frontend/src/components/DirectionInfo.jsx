@@ -41,49 +41,54 @@ function RouteList({ directions, loading, users, midpoint, mode }) {
 
         return (
           <div key={i} className="bg-gray-50 rounded-xl px-3 py-2">
+            {/* 주소 + 소요시간 */}
             <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className="w-5 h-5 rounded-full text-white text-xs flex items-center justify-center font-bold flex-shrink-0"
                   style={{ backgroundColor: color }}>
                   {i + 1}
                 </span>
-                <span className="text-xs text-gray-600 font-medium truncate max-w-[110px]">{user.address}</span>
+                <span className="text-xs text-gray-600 font-medium truncate">{user.address}</span>
               </div>
-              <div className="flex items-center gap-2">
-                {dir && dir.duration > 0 && (
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <span className="font-semibold text-gray-800">{formatSeconds(dir.duration)}</span>
-                    {mode === 'car' && <span>{formatDistance(dir.distance)}</span>}
-                    {mode === 'car' && dir.tollFee > 0 && (
-                      <span className="text-orange-500">톨비 {dir.tollFee.toLocaleString()}원</span>
-                    )}
-                    {mode === 'car' && (
-                      <span className="text-gray-400">(평균 기준)</span>
-                    )}
-                  </div>
-                )}
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-semibold px-2 py-1 rounded-lg transition-colors flex-shrink-0"
-                >
-                  지도보기
-                </a>
-                <button
-                  onClick={() => setShareModal({ url, title: `${user.address} → ${destName} 경로`, description: '카카오맵에서 경로를 확인해보세요' })}
-                  className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-2 py-1 rounded-lg transition-colors flex-shrink-0"
-                >
-                  공유하기
-                </button>
-              </div>
+              {dir && dir.duration > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 flex-shrink-0 ml-2">
+                  <span className="font-semibold text-gray-800">{formatSeconds(dir.duration)}</span>
+                  {mode === 'car' && <span>{formatDistance(dir.distance)}</span>}
+                  {mode === 'car' && dir.tollFee > 0 && (
+                    <span className="text-orange-500">톨비 {dir.tollFee.toLocaleString()}원</span>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* 진행 바 */}
             {mode === 'car' && dir?.duration > 0 && (
-              <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-2">
                 <div className="h-full rounded-full transition-all duration-500"
                   style={{ width: `${ratio * 100}%`, backgroundColor: color }} />
               </div>
             )}
+
+            {/* 버튼 */}
+            <div className="flex justify-end gap-2 mt-1">
+              {mode === 'car' && (
+                <span className="text-xs text-gray-400 mr-auto self-center">카카오 모빌리티 기준</span>
+              )}
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-semibold px-2 py-1 rounded-lg transition-colors"
+              >
+                지도보기
+              </a>
+              <button
+                onClick={() => setShareModal({ url, title: `${user.address} → ${destName} 경로`, description: '카카오맵에서 경로를 확인해보세요' })}
+                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-2 py-1 rounded-lg transition-colors"
+              >
+                공유하기
+              </button>
+            </div>
           </div>
         )
       })}

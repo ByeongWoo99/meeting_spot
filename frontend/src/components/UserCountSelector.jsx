@@ -3,7 +3,7 @@ export default function UserCountSelector({ count, onChange }) {
     <div className="flex items-center gap-3 mb-6">
       <span className="text-sm font-medium text-gray-600">인원 수</span>
       <div className="flex gap-2">
-        {[2, 3, 4, 5, 6].map((n) => (
+        {[2, 3, 4].map((n) => (
           <button
             key={n}
             onClick={() => onChange(n)}

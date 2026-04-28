@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserCountSelector from '../components/UserCountSelector'
 import LocationInput from '../components/LocationInput'
 import Map from '../components/Map'
+import axios from 'axios'
 import { calcMidpoint } from '../api/midpointApi'
 import { formatSeconds } from '../utils/format'
 
@@ -26,7 +27,22 @@ export default function Home() {
   const [selectedIdx, setSelectedIdx] = useState(0)  // 선택된 후보 인덱스
   const midpoint = candidates[selectedIdx] || null
   const [loading, setLoading] = useState(false)
+  const [loadingStep, setLoadingStep] = useState(0)
+  const abortRef = useRef(null)
   const [error, setError] = useState(null)
+
+  const LOADING_STEPS = [
+    { label: '후보 역 탐색 중...', sub: '주변 지하철역을 검색하고 있어요' },
+    { label: '대중교통 소요시간 조회 중...', sub: '각 출발지에서 후보 역까지 시간을 계산하고 있어요' },
+    { label: '최적 중간지점 계산 중...', sub: '가장 공평한 장소를 찾고 있어요' },
+  ]
+
+  useEffect(() => {
+    if (!loading) { setLoadingStep(0); return }
+    const t1 = setTimeout(() => setLoadingStep(1), 2000)
+    const t2 = setTimeout(() => setLoadingStep(2), 5000)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [loading])
 
   // 주변 장소 모드 상태
   const [nearbyUser, setNearbyUser] = useState({ address: '', lat: null, lng: null })
@@ -77,15 +93,18 @@ export default function Home() {
     }
     setError(null)
     setLoading(true)
+    abortRef.current = new AbortController()
     try {
       const locations = users
         .filter((u) => u.lat && u.lng)
         .map((u) => ({ name: u.name, lat: u.lat, lng: u.lng }))
-      const result = await calcMidpoint(locations)
+      const result = await calcMidpoint(locations, abortRef.current.signal)
       setCandidates(result)
       setSelectedIdx(0)
     } catch (e) {
-      setError('중간지점 계산에 실패했습니다. 백엔드 서버를 확인해 주세요.')
+      if (!axios.isCancel(e) && e.name !== 'CanceledError') {
+        setError('중간지점 계산에 실패했습니다. 백엔드 서버를 확인해 주세요.')
+      }
     } finally {
       setLoading(false)
     }
@@ -262,9 +281,27 @@ export default function Home() {
       {/* 계산 중 로딩 팝업 */}
       {loading && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl px-8 py-6 flex flex-col items-center gap-3 shadow-xl">
+          <div className="bg-white rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-xl w-72">
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-700 font-semibold">중간 지점 찾는 중...</p>
+            <div className="text-center">
+              <p className="text-gray-800 font-semibold text-sm">{LOADING_STEPS[loadingStep].label}</p>
+              <p className="text-gray-400 text-xs mt-1">{LOADING_STEPS[loadingStep].sub}</p>
+            </div>
+            <div className="flex gap-1.5">
+              {LOADING_STEPS.map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1.5 rounded-full transition-all duration-500
+                    ${i <= loadingStep ? 'bg-blue-500 w-6' : 'bg-gray-200 w-3'}`}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => abortRef.current?.abort()}
+              className="text-sm font-semibold text-red-500 border border-red-400 hover:bg-red-50 px-5 py-1.5 rounded-lg transition-colors"
+            >
+              취소
+            </button>
           </div>
         </div>
       )}
