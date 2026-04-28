@@ -54,6 +54,13 @@ export default function LocationInput({ index, value, onChange }) {
     })
   }
 
+  function handleClear() {
+    setKeyword('')
+    setSuggestions([])
+    setOpen(false)
+    onChange({ address: '', lat: null, lng: null })
+  }
+
   const colors = ['#3B82F6', '#EF4444', '#22C55E', '#A855F7', '#F97316', '#EC4899']
   const color = colors[index % colors.length]
   const isSelected = !!(value.lat && value.lng)
@@ -76,10 +83,18 @@ export default function LocationInput({ index, value, onChange }) {
             placeholder={`출발지 ${index + 1} 검색`}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
-          {isSelected && (
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-base">✓</span>
+          {keyword && (
+            <button
+              onMouseDown={(e) => { e.preventDefault(); handleClear() }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full bg-gray-300 hover:bg-gray-400 transition-colors"
+            >
+              <span className="text-white text-xs leading-none">✕</span>
+            </button>
           )}
         </div>
+        {isSelected && (
+          <span className="text-green-500 text-base flex-shrink-0">✓</span>
+        )}
       </div>
 
       {open && suggestions.length > 0 && (

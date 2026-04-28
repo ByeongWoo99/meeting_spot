@@ -50,7 +50,6 @@ public class TransitService {
                 .bodyToMono(Map.class)
                 .map(resp -> {
                     try {
-                        log.debug("OdSay 응답: {}", resp);
                         Map<String, Object> result = (Map<String, Object>) resp.get("result");
                         if (result == null) {
                             Map<String, Object> error = (Map<String, Object>) resp.get("error");
