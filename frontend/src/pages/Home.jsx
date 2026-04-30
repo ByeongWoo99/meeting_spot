@@ -23,8 +23,10 @@ export default function Home() {
   // 중간지점 모드 상태
   const [userCount, setUserCount] = useState(2)
   const [users, setUsers] = useState(makeUsers(2))
+  const [category, setCategory] = useState('ALL')
   const [candidates, setCandidates] = useState([])   // 후보 역 배열 (최대 2개)
   const [selectedIdx, setSelectedIdx] = useState(0)  // 선택된 후보 인덱스
+  const [searchNote, setSearchNote] = useState(null)
   const midpoint = candidates[selectedIdx] || null
   const [loading, setLoading] = useState(false)
   const [loadingStep, setLoadingStep] = useState(0)
@@ -64,12 +66,14 @@ export default function Home() {
     })
     setCandidates([])
     setSelectedIdx(0)
+    setSearchNote(null)
   }
 
   function handleLocationChange(index, loc) {
     setUsers((prev) => prev.map((u, i) => (i === index ? { ...u, ...loc } : u)))
     setCandidates([])
     setSelectedIdx(0)
+    setSearchNote(null)
   }
 
   async function handleSubmit() {
@@ -98,8 +102,9 @@ export default function Home() {
       const locations = users
         .filter((u) => u.lat && u.lng)
         .map((u) => ({ name: u.name, lat: u.lat, lng: u.lng }))
-      const result = await calcMidpoint(locations, abortRef.current.signal)
-      setCandidates(result)
+      const result = await calcMidpoint(locations, category, abortRef.current.signal)
+      setCandidates(result.candidates)
+      setSearchNote(result.searchNote || null)
       setSelectedIdx(0)
     } catch (e) {
       if (!axios.isCancel(e) && e.name !== 'CanceledError') {
@@ -111,7 +116,7 @@ export default function Home() {
   }
 
   function handleNext() {
-    navigate('/result', { state: { users, candidates, selectedIdx } })
+    navigate('/result', { state: { users, candidates, selectedIdx, searchNote } })
   }
 
   function handleNearbySearch() {
@@ -189,6 +194,30 @@ export default function Home() {
                   />
                 ))}
               </div>
+              {/* 카테고리 선택 */}
+              <div className="mb-4">
+                <p className="text-xs text-gray-400 mb-2">만남 목적</p>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { code: 'ALL',     label: '전체' },
+                    { code: 'FD6',     label: '음식점' },
+                    { code: 'CE7',     label: '카페' },
+                    { code: 'CT1_AT4', label: '문화·명소' },
+                  ].map(({ code, label }) => (
+                    <button
+                      key={code}
+                      onClick={() => setCategory(code)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
+                        ${category === code
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
               <button
                 onClick={handleSubmit}
@@ -264,15 +293,15 @@ export default function Home() {
                 </div>
               </div>
             )}
-            {midpoint.transitFallback && (
-              <p className="text-xs text-amber-500 mb-3">* 직선거리 기준으로 선택됨</p>
+            {searchNote && (
+              <p className="text-xs text-amber-600 bg-amber-100 rounded-lg px-3 py-2 mb-3">{searchNote}</p>
             )}
 
             <button
               onClick={handleNext}
               className="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors"
             >
-              주변 맛집 · 카페 추천 보기 →
+              주변 추천 장소 보기 →
             </button>
           </div>
         )}

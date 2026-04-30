@@ -14,7 +14,7 @@ export default function Result() {
   const [searchParams] = useSearchParams()
   const [shareModal, setShareModal] = useState(null)
 
-  const { users: stateUsers = [], candidates: stateCandidates = [], selectedIdx: initIdx = 0, initialCategory = 'ALL' } = state || {}
+  const { users: stateUsers = [], candidates: stateCandidates = [], selectedIdx: initIdx = 0, initialCategory = 'ALL', searchNote = null } = state || {}
 
   const isSharedView = stateCandidates.length === 0 && !!searchParams.get('candidates')
 
@@ -133,6 +133,13 @@ export default function Result() {
               결과 공유
             </button>
           </div>
+
+          {/* 탐색 안내 메시지 */}
+          {searchNote && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
+              <p className="text-xs text-amber-700">{searchNote}</p>
+            </div>
+          )}
 
           {/* 후보 탭 */}
           {candidates.length === 2 && (

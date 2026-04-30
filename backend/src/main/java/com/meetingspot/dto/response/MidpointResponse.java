@@ -13,6 +13,7 @@ import java.util.List;
 @AllArgsConstructor
 public class MidpointResponse {
     private List<Candidate> candidates;
+    private String searchNote;
 
     @Data
     @Builder
