@@ -7,6 +7,7 @@ import java.util.List;
 public class MidpointRequest {
 
     private List<LocationDto> locations;
+    private String category = "ALL";
 
     @Data
     public static class LocationDto {
