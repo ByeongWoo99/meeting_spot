@@ -196,26 +196,43 @@ export default function Home() {
               </div>
               {/* 카테고리 선택 */}
               <div className="mb-4">
-                <p className="text-xs text-gray-400 mb-2">만남 목적</p>
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { code: 'ALL',     label: '전체' },
-                    { code: 'FD6',     label: '음식점' },
-                    { code: 'CE7',     label: '카페' },
-                    { code: 'CT1_AT4', label: '문화·명소' },
-                  ].map(({ code, label }) => (
-                    <button
-                      key={code}
-                      onClick={() => setCategory(code)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
-                        ${category === code
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <p className="text-xs text-gray-400 mb-1">탐색 방식</p>
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={() => setCategory(category === 'SIMPLE' ? 'ALL' : 'SIMPLE')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
+                      ${category === 'SIMPLE'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                  >
+                    대중교통 소요시간
+                  </button>
                 </div>
+
+                {category !== 'SIMPLE' && (
+                  <>
+                    <p className="text-xs text-gray-400 mb-2">만남 목적</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {[
+                        { code: 'ALL',     label: '전체' },
+                        { code: 'FD6',     label: '음식점' },
+                        { code: 'CE7',     label: '카페' },
+                        { code: 'CT1_AT4', label: '문화·명소' },
+                      ].map(({ code, label }) => (
+                        <button
+                          key={code}
+                          onClick={() => setCategory(code)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
+                            ${category === code
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
 
               {error && <p className="text-red-500 text-sm mb-3">{error}</p>}

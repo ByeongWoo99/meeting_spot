@@ -21,6 +21,7 @@ public class MidpointService {
     private static final int CATEGORY_RADIUS_M = 736;
     private static final int CATEGORY_MIN_COUNT = 10;
     private static final int[] SEARCH_RADII = {5000, 10000};
+    private static final int[] SIMPLE_SEARCH_RADII = {5000, 10000, 20000};
     private static final List<String> ALL_CATEGORY_CODES = List.of("FD6", "CE7", "CT1", "AT4");
     private static final List<String> CULTURE_CODES = List.of("CT1", "AT4");
 
@@ -33,6 +34,8 @@ public class MidpointService {
 
         double avgLat = locations.stream().mapToDouble(MidpointRequest.LocationDto::getLat).average().orElse(0);
         double avgLng = locations.stream().mapToDouble(MidpointRequest.LocationDto::getLng).average().orElse(0);
+
+        if ("SIMPLE".equals(category)) return calculateBySimple(locations, avgLat, avgLng);
 
         // 1~3단계: 반경 단계별 탐색
         for (int i = 0; i < SEARCH_RADII.length; i++) {
@@ -170,6 +173,72 @@ public class MidpointService {
         }
 
         return MidpointResponse.builder().candidates(result).searchNote(note).build();
+    }
+
+    private MidpointResponse calculateBySimple(List<MidpointRequest.LocationDto> locations,
+                                                double avgLat, double avgLng) {
+        for (int i = 0; i < SIMPLE_SEARCH_RADII.length; i++) {
+            List<StationInfo> stations = getCandidateStations(avgLat, avgLng, SIMPLE_SEARCH_RADII[i]);
+            List<ScoredStation> scored = scoreByFairness(stations, locations);
+            if (!scored.isEmpty()) {
+                String note = i > 0
+                        ? "중간 좌표 근처에서 소요시간 기준으로 더 넓은 반경을 탐색했습니다."
+                        : null;
+                return buildSimpleResponse(scored, locations, note);
+            }
+        }
+        List<StationInfo> any = getNearestStationsNoRadius(avgLat, avgLng);
+        List<ScoredStation> fallbackScored = scoreByFairness(any, locations);
+        if (!fallbackScored.isEmpty()) {
+            return buildSimpleResponse(fallbackScored, locations,
+                    "주변에서 적합한 역을 찾지 못해 가장 가까운 역을 기준으로 안내합니다.");
+        }
+        String addr = getAddressFromCoords(avgLat, avgLng);
+        return MidpointResponse.builder()
+                .candidates(List.of(MidpointResponse.Candidate.builder()
+                        .rank(1).nearestStation(null)
+                        .lat(avgLat).lng(avgLng).address(addr)
+                        .stationLat(avgLat).stationLng(avgLng)
+                        .transitTimes(null).transitFallback(true).compositeScore(0).build()))
+                .searchNote("조건에 맞는 장소를 찾지 못해 단순 중간 지점을 기준으로 안내합니다.")
+                .build();
+    }
+
+    private List<ScoredStation> scoreByFairness(List<StationInfo> stations,
+                                                  List<MidpointRequest.LocationDto> locations) {
+        List<ScoredStation> result = new ArrayList<>();
+        for (StationInfo s : stations) {
+            int[] d = transitService.getAllTransitDurations(locations, s.lng(), s.lat()).block();
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+            if (d == null) continue;
+            if (Arrays.stream(d).noneMatch(v -> v >= 0)) continue;
+            double[] times = Arrays.stream(d).mapToDouble(v -> v < 0 ? 7200.0 : v).toArray();
+            double maxTime = Arrays.stream(times).max().orElse(0);
+            double mean = Arrays.stream(times).average().orElse(0);
+            double stdDev = Math.sqrt(Arrays.stream(times)
+                    .map(t -> Math.pow(t - mean, 2)).average().orElse(0));
+            result.add(new ScoredStation(s, d, 0.4 * maxTime + 0.6 * stdDev));
+        }
+        result.sort(Comparator.comparingDouble(ScoredStation::score));
+        return result;
+    }
+
+    private MidpointResponse buildSimpleResponse(List<ScoredStation> scored,
+                                                   List<MidpointRequest.LocationDto> locations,
+                                                   String note) {
+        List<MidpointResponse.Candidate> candidates = new ArrayList<>();
+        for (int i = 0; i < Math.min(2, scored.size()); i++) {
+            ScoredStation s = scored.get(i);
+            String addr = getAddressFromCoords(s.station().lat(), s.station().lng());
+            log.debug("SIMPLE 후보 {}: name={}, score={}", i + 1, s.station().name(), Math.round(s.score()));
+            candidates.add(MidpointResponse.Candidate.builder()
+                    .rank(i + 1).nearestStation(s.station().name())
+                    .lat(s.station().lat()).lng(s.station().lng()).address(addr)
+                    .stationLat(s.station().lat()).stationLng(s.station().lng())
+                    .transitTimes(buildTransitTimes(locations, s.durations()))
+                    .transitFallback(false).compositeScore(s.score()).build());
+        }
+        return MidpointResponse.builder().candidates(candidates).searchNote(note).build();
     }
 
     private List<ScoredStation> scoreAndRankStations(List<StationInfo> stations,
