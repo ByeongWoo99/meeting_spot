@@ -30,6 +30,7 @@ public class MidpointResponse {
         private List<UserTransitTime> transitTimes;
         private boolean transitFallback;
         private double compositeScore;
+        private String description;
     }
 
     @Data

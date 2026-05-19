@@ -26,6 +26,11 @@ odsay:
     key: ${ODSAY_API_KEY}
     base-url: https://api.odsay.com
 
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
+    base-url: https://generativelanguage.googleapis.com
+
 logging:
   level:
     com.meetingspot: DEBUG

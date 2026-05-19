@@ -3,6 +3,8 @@ package com.meetingspot.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
@@ -19,6 +21,9 @@ public class KakaoApiConfig {
 
     @Value("${odsay.api.base-url}")
     private String odsayBaseUrl;
+
+    @Value("${gemini.api.base-url}")
+    private String geminiBaseUrl;
 
     @Bean
     public WebClient kakaoWebClient() {
@@ -41,6 +46,14 @@ public class KakaoApiConfig {
         return WebClient.builder()
                 .baseUrl(odsayBaseUrl)
                 .defaultHeader("Referer", "http://localhost:5173")
+                .build();
+    }
+
+    @Bean
+    public WebClient geminiWebClient() {
+        return WebClient.builder()
+                .baseUrl(geminiBaseUrl)
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
     }
 }

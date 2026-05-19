@@ -7,6 +7,7 @@ import DirectionInfo from '../components/DirectionInfo'
 import ShareModal from '../components/ShareModal'
 import { fetchPlaces } from '../api/placeApi'
 import { fetchCarDirections } from '../api/directionApi'
+import { describeCandidate } from '../api/midpointApi'
 
 export default function Result() {
   const { state } = useLocation()
@@ -14,7 +15,7 @@ export default function Result() {
   const [searchParams] = useSearchParams()
   const [shareModal, setShareModal] = useState(null)
 
-  const { users: stateUsers = [], candidates: stateCandidates = [], selectedIdx: initIdx = 0, initialCategory = 'ALL', searchNote = null } = state || {}
+  const { users: stateUsers = [], candidates: stateCandidates = [], selectedIdx: initIdx = 0, initialCategory = 'ALL', searchNote = null, descriptions: stateDescriptions = {} } = state || {}
 
   const isSharedView = stateCandidates.length === 0 && !!searchParams.get('candidates')
 
@@ -61,8 +62,21 @@ export default function Result() {
   const [placesLoading, setPlacesLoading] = useState(false)
   const [selectedPlace, setSelectedPlace] = useState(null)
 
+  const [descriptions, setDescriptions] = useState(stateDescriptions)
+
   const [carDirections, setCarDirections] = useState([])
   const [carLoading, setCarLoading] = useState(false)
+
+  // AI 설명 비동기 로딩 — 설명이 없는 후보만 fetch
+  useEffect(() => {
+    if (candidates.length === 0) return
+    candidates.forEach(async (c) => {
+      if (!c.nearestStation || !c.transitTimes?.length) return
+      if (stateDescriptions[c.rank]) return
+      const desc = await describeCandidate(c).catch(() => '')
+      setDescriptions(prev => ({ ...prev, [c.rank]: desc }))
+    })
+  }, [candidates])
 
   // 장소 검색 — midpoint(후보 탭 전환 포함) 또는 category 변경 시 재실행
   useEffect(() => {
@@ -133,6 +147,15 @@ export default function Result() {
               결과 공유
             </button>
           </div>
+
+          {/* AI 후보 설명 */}
+          {descriptions[midpoint.rank] ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-3">
+              <p className="text-xs text-blue-700">{descriptions[midpoint.rank]}</p>
+            </div>
+          ) : midpoint.nearestStation && (
+            <p className="text-xs text-blue-400 px-1 mb-3">AI 설명 생성 중...</p>
+          )}
 
           {/* 탐색 안내 메시지 */}
           {searchNote && (
