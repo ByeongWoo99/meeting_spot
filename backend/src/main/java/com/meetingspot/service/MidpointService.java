@@ -21,7 +21,7 @@ public class MidpointService {
     private static final int CATEGORY_RADIUS_M = 736;
     private static final int CATEGORY_MIN_COUNT = 10;
     private static final int[] SEARCH_RADII = {5000, 10000};
-    private static final int[] SIMPLE_SEARCH_RADII = {5000, 10000, 20000};
+    private static final int[] SIMPLE_SEARCH_RADII = {5000, 10000};
     private static final List<String> ALL_CATEGORY_CODES = List.of("FD6", "CE7", "CT1", "AT4");
     private static final List<String> CULTURE_CODES = List.of("CT1", "AT4");
 
@@ -29,6 +29,16 @@ public class MidpointService {
     private record ScoredStation(StationInfo station, int[] durations, double score) {}
 
     public MidpointResponse calculate(MidpointRequest request) {
+        long start = System.currentTimeMillis();
+        MidpointResponse response = doCalculate(request);
+        log.info("후보역 반환 완료: {}ms (후보 {}개, 카테고리: {})",
+                System.currentTimeMillis() - start,
+                response.getCandidates() != null ? response.getCandidates().size() : 0,
+                request.getCategory());
+        return response;
+    }
+
+    private MidpointResponse doCalculate(MidpointRequest request) {
         List<MidpointRequest.LocationDto> locations = request.getLocations();
         String category = request.getCategory() != null ? request.getCategory() : "ALL";
 
@@ -157,12 +167,13 @@ public class MidpointService {
         for (int i = 0; i < Math.min(2, ranked.size()); i++) {
             ScoredStation s = ranked.get(i);
             String addr = getAddressFromCoords(s.station().lat(), s.station().lng());
+            List<MidpointResponse.UserTransitTime> transitTimes = buildTransitTimes(users, s.durations());
             log.debug("후보 {}: name={}, score={}", i + 1, s.station().name(), Math.round(s.score()));
             result.add(MidpointResponse.Candidate.builder()
                     .rank(i + 1).nearestStation(s.station().name())
                     .lat(s.station().lat()).lng(s.station().lng()).address(addr)
                     .stationLat(s.station().lat()).stationLng(s.station().lng())
-                    .transitTimes(buildTransitTimes(users, s.durations()))
+                    .transitTimes(transitTimes)
                     .transitFallback(false).compositeScore(s.score()).build());
         }
 
@@ -230,12 +241,13 @@ public class MidpointService {
         for (int i = 0; i < Math.min(2, scored.size()); i++) {
             ScoredStation s = scored.get(i);
             String addr = getAddressFromCoords(s.station().lat(), s.station().lng());
+            List<MidpointResponse.UserTransitTime> transitTimes = buildTransitTimes(locations, s.durations());
             log.debug("SIMPLE 후보 {}: name={}, score={}", i + 1, s.station().name(), Math.round(s.score()));
             candidates.add(MidpointResponse.Candidate.builder()
                     .rank(i + 1).nearestStation(s.station().name())
                     .lat(s.station().lat()).lng(s.station().lng()).address(addr)
                     .stationLat(s.station().lat()).stationLng(s.station().lng())
-                    .transitTimes(buildTransitTimes(locations, s.durations()))
+                    .transitTimes(transitTimes)
                     .transitFallback(false).compositeScore(s.score()).build());
         }
         return MidpointResponse.builder().candidates(candidates).searchNote(note).build();
@@ -347,7 +359,7 @@ public class MidpointService {
     }
 
     private String extractBaseName(String name) {
-        int idx = name.indexOf("역");
+        int idx = name.lastIndexOf("역");
         return idx >= 0 ? name.substring(0, idx + 1) : name;
     }
 

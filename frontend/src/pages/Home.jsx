@@ -4,7 +4,7 @@ import UserCountSelector from '../components/UserCountSelector'
 import LocationInput from '../components/LocationInput'
 import Map from '../components/Map'
 import axios from 'axios'
-import { calcMidpoint } from '../api/midpointApi'
+import { calcMidpoint, describeCandidate } from '../api/midpointApi'
 import { formatSeconds } from '../utils/format'
 
 function makeUsers(count) {
@@ -26,6 +26,7 @@ export default function Home() {
   const [category, setCategory] = useState('ALL')
   const [candidates, setCandidates] = useState([])   // 후보 역 배열 (최대 2개)
   const [selectedIdx, setSelectedIdx] = useState(0)  // 선택된 후보 인덱스
+  const [descriptions, setDescriptions] = useState({}) // { rank: description }
   const [searchNote, setSearchNote] = useState(null)
   const midpoint = candidates[selectedIdx] || null
   const [loading, setLoading] = useState(false)
@@ -104,8 +105,14 @@ export default function Home() {
         .map((u) => ({ name: u.name, lat: u.lat, lng: u.lng }))
       const result = await calcMidpoint(locations, category, abortRef.current.signal)
       setCandidates(result.candidates)
+      setDescriptions({})
       setSearchNote(result.searchNote || null)
       setSelectedIdx(0)
+      result.candidates.forEach(async (c) => {
+        if (!c.nearestStation || !c.transitTimes?.length) return
+        const desc = await describeCandidate(c).catch(() => '')
+        setDescriptions(prev => ({ ...prev, [c.rank]: desc }))
+      })
     } catch (e) {
       if (!axios.isCancel(e) && e.name !== 'CanceledError') {
         setError('중간지점 계산에 실패했습니다. 백엔드 서버를 확인해 주세요.')
@@ -116,7 +123,7 @@ export default function Home() {
   }
 
   function handleNext() {
-    navigate('/result', { state: { users, candidates, selectedIdx, searchNote } })
+    navigate('/result', { state: { users, candidates, selectedIdx, searchNote, descriptions } })
   }
 
   function handleNearbySearch() {
@@ -309,6 +316,11 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+            )}
+            {descriptions[midpoint.rank] ? (
+              <p className="text-xs text-amber-700 bg-amber-100 rounded-lg px-3 py-2 mb-3">{descriptions[midpoint.rank]}</p>
+            ) : midpoint.nearestStation && (
+              <p className="text-xs text-amber-400 mb-3">AI 설명 생성 중...</p>
             )}
             {searchNote && (
               <p className="text-xs text-amber-600 bg-amber-100 rounded-lg px-3 py-2 mb-3">{searchNote}</p>

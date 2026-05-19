@@ -84,8 +84,9 @@ public class TransitService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> fetchResponse(double sLng, double sLat, double eLng, double eLat, Integer searchType) {
+        long start = System.currentTimeMillis();
         try {
-            return odsayWebClient.get()
+            Map<String, Object> result = odsayWebClient.get()
                     .uri(uriBuilder -> {
                         var b = uriBuilder
                                 .path("/v1/api/searchPubTransPathT")
@@ -100,8 +101,11 @@ public class TransitService {
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block();
+            log.info("OdSay API 응답시간: {}ms (출발 {},{} → 도착 {},{})",
+                    System.currentTimeMillis() - start, sLng, sLat, eLng, eLat);
+            return result;
         } catch (Exception e) {
-            log.warn("OdSay API 호출 실패: {}", e.getMessage());
+            log.warn("OdSay API 호출 실패 ({}ms): {}", System.currentTimeMillis() - start, e.getMessage());
             return null;
         }
     }
@@ -165,6 +169,7 @@ public class TransitService {
 
     public Mono<int[]> getAllTransitDurations(List<MidpointRequest.LocationDto> users,
                                               double stationLng, double stationLat) {
+        long totalStart = System.currentTimeMillis();
         int[] durations = new int[users.size()];
         for (int i = 0; i < users.size(); i++) {
             MidpointRequest.LocationDto u = users.get(i);
@@ -172,6 +177,8 @@ public class TransitService {
             durations[i] = duration != null ? duration : -1;
             try { Thread.sleep(300); } catch (InterruptedException ignored) {}
         }
+        log.info("OdSay 전체 소요시간: {}ms (사용자 {}명, 역 {},{} 기준)",
+                System.currentTimeMillis() - totalStart, users.size(), stationLng, stationLat);
         return Mono.just(durations);
     }
 }
