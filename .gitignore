@@ -17,3 +17,6 @@ backend/bin/
 
 # Portfolio notes
 obsidian/
+
+# k6 load test scripts
+k6*.js
