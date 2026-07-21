@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -76,7 +77,6 @@ public class TransitService {
                 searchTypeNum.intValue(), terminals.depLng(), terminals.depLat(), terminals.arrLng(), terminals.arrLat());
 
         int depLocal = fetchCityInternalSeconds(originLng, originLat, terminals.depLng(), terminals.depLat());
-        try { Thread.sleep(300); } catch (InterruptedException ignored) {}
         int arrLocal = fetchCityInternalSeconds(terminals.arrLng(), terminals.arrLat(), destLng, destLat);
 
         return baseSeconds + depLocal + arrLocal;
@@ -84,30 +84,82 @@ public class TransitService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> fetchResponse(double sLng, double sLat, double eLng, double eLat, Integer searchType) {
-        long start = System.currentTimeMillis();
-        try {
-            Map<String, Object> result = odsayWebClient.get()
-                    .uri(uriBuilder -> {
-                        var b = uriBuilder
-                                .path("/v1/api/searchPubTransPathT")
-                                .queryParam("SX", sLng)
-                                .queryParam("SY", sLat)
-                                .queryParam("EX", eLng)
-                                .queryParam("EY", eLat)
-                                .queryParam("apiKey", apiKey);
-                        if (searchType != null) b = b.queryParam("SearchType", searchType);
-                        return b.build();
-                    })
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block();
-            log.info("OdSay API 응답시간: {}ms (출발 {},{} → 도착 {},{})",
-                    System.currentTimeMillis() - start, sLng, sLat, eLng, eLat);
-            return result;
-        } catch (Exception e) {
-            log.warn("OdSay API 호출 실패 ({}ms): {}", System.currentTimeMillis() - start, e.getMessage());
-            return null;
+        int maxRetry = 5;
+        long rateLimitStart = -1;
+        for (int attempt = 1; attempt <= maxRetry; attempt++) {
+            long start = System.currentTimeMillis();
+            try {
+                Map<String, Object> result = odsayWebClient.get()
+                        .uri(uriBuilder -> {
+                            var b = uriBuilder
+                                    .path("/v1/api/searchPubTransPathT")
+                                    .queryParam("SX", sLng)
+                                    .queryParam("SY", sLat)
+                                    .queryParam("EX", eLng)
+                                    .queryParam("EY", eLat)
+                                    .queryParam("apiKey", apiKey);
+                            if (searchType != null) b = b.queryParam("SearchType", searchType);
+                            return b.build();
+                        })
+                        .retrieve()
+                        .bodyToMono(Map.class)
+                        .block();
+                if (result != null) {
+                    Map<String, Object> jsonError = (Map<String, Object>) result.get("error");
+                    if (jsonError != null) {
+                        Object code = jsonError.get("code");
+                        if (code != null && Integer.parseInt(code.toString()) == 429) {
+                            if (rateLimitStart < 0) rateLimitStart = System.currentTimeMillis();
+                            long targetMs = 600L + (attempt - 1) * 100L; // 목표: 600, 700, 800, 900, 1000ms
+                            long elapsed = System.currentTimeMillis() - rateLimitStart;
+                            long remaining = Math.max(0, targetMs - elapsed);
+                            log.warn("OdSay JSON 429 — {}/{}회 시도, 목표 {}ms, 경과 {}ms, 추가 대기 {}ms",
+                                    attempt, maxRetry, targetMs, elapsed, remaining);
+                            if (attempt < maxRetry) {
+                                if (remaining > 0) try { Thread.sleep(remaining); } catch (InterruptedException ignored) {}
+                                continue;
+                            }
+                            log.warn("OdSay JSON rate limit 재시도 {}회 모두 실패 (출발 {},{} → 도착 {},{})", maxRetry, sLng, sLat, eLng, eLat);
+                            return null;
+                        }
+                    }
+                }
+                if (rateLimitStart >= 0) {
+                    log.info("OdSay 429 쿨다운 측정: {}ms 이후 성공 (출발 {},{} → 도착 {},{})",
+                            System.currentTimeMillis() - rateLimitStart, sLng, sLat, eLng, eLat);
+                }
+                log.info("OdSay API 응답시간: {}ms (출발 {},{} → 도착 {},{})",
+                        System.currentTimeMillis() - start, sLng, sLat, eLng, eLat);
+                return result;
+            } catch (WebClientResponseException e) {
+                if (e.getStatusCode().value() == 429) {
+                    long waitMs = 500;
+                    String retryAfter = e.getHeaders().getFirst("Retry-After");
+                    if (retryAfter != null) {
+                        try {
+                            waitMs = Long.parseLong(retryAfter.trim()) * 1000L;
+                            log.warn("OdSay rate limit 초과 (429) — Retry-After: {}s, {}/{}회 시도", retryAfter, attempt, maxRetry);
+                        } catch (NumberFormatException ignored) {
+                            log.warn("OdSay rate limit 초과 (429) — Retry-After 파싱 실패({}), 500ms 대기, {}/{}회 시도", retryAfter, attempt, maxRetry);
+                        }
+                    } else {
+                        log.warn("OdSay rate limit 초과 (429) — Retry-After 헤더 없음, 500ms 대기, {}/{}회 시도", attempt, maxRetry);
+                    }
+                    if (attempt < maxRetry) {
+                        try { Thread.sleep(waitMs); } catch (InterruptedException ignored) {}
+                        continue;
+                    }
+                    log.warn("OdSay rate limit 재시도 {}회 모두 실패 (출발 {},{} → 도착 {},{})", maxRetry, sLng, sLat, eLng, eLat);
+                } else {
+                    log.warn("OdSay API 호출 실패 (HTTP {}, {}ms)", e.getStatusCode().value(), System.currentTimeMillis() - start);
+                }
+                return null;
+            } catch (Exception e) {
+                log.warn("OdSay API 호출 실패 ({}ms): {}", System.currentTimeMillis() - start, e.getMessage());
+                return null;
+            }
         }
+        return null;
     }
 
     @SuppressWarnings("unchecked")
@@ -175,7 +227,6 @@ public class TransitService {
             MidpointRequest.LocationDto u = users.get(i);
             Integer duration = getTransitDuration(u.getLng(), u.getLat(), stationLng, stationLat).block();
             durations[i] = duration != null ? duration : -1;
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
         }
         log.info("OdSay 전체 소요시간: {}ms (사용자 {}명, 역 {},{} 기준)",
                 System.currentTimeMillis() - totalStart, users.size(), stationLng, stationLat);
