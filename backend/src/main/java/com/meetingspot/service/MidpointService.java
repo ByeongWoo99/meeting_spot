@@ -7,7 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -19,6 +24,7 @@ public class MidpointService {
     private final TransitService transitService;
 
     private static final int CATEGORY_RADIUS_M = 736;
+    private static final ExecutorService PLACE_COUNT_POOL = Executors.newFixedThreadPool(6);
     private static final int CATEGORY_MIN_COUNT = 10;
     private static final int[] SEARCH_RADII = {5000, 10000};
     private static final int[] SIMPLE_SEARCH_RADII = {5000, 10000};
@@ -51,19 +57,30 @@ public class MidpointService {
         for (int i = 0; i < SEARCH_RADII.length; i++) {
             List<StationInfo> stations = getCandidateStations(avgLat, avgLng, SEARCH_RADII[i]);
 
+            long placeCountStart = System.currentTimeMillis();
+            List<CompletableFuture<Map.Entry<StationInfo, Integer>>> futures = stations.stream()
+                    .map(s -> CompletableFuture.supplyAsync(
+                            () -> Map.entry(s, getPlaceCount(s.lat(), s.lng(), category)),
+                            PLACE_COUNT_POOL))
+                    .toList();
+
             Map<StationInfo, Integer> placeCounts = new LinkedHashMap<>();
-            for (StationInfo s : stations) {
-                int count = getPlaceCount(s.lat(), s.lng(), category);
-                if (count >= CATEGORY_MIN_COUNT) {
-                    placeCounts.put(s, count);
-                }
-            }
+            futures.stream()
+                    .map(CompletableFuture::join)
+                    .filter(e -> e.getValue() >= CATEGORY_MIN_COUNT)
+                    .forEach(e -> placeCounts.put(e.getKey(), e.getValue()));
+            log.info("Kakao 장소수 병렬 조회 완료: {}ms (역 {}개, 통과 {}개)",
+                    System.currentTimeMillis() - placeCountStart, stations.size(), placeCounts.size());
 
             if (!placeCounts.isEmpty()) {
+                List<StationInfo> closest = placeCounts.keySet().stream()
+                        .sorted(Comparator.comparingDouble(s -> haversine(avgLat, avgLng, s.lat(), s.lng())))
+                        .limit(5)
+                        .collect(Collectors.toList());
                 String note = i > 0
                         ? "중간 좌표 근처에 적합한 장소가 없어 더 넓은 반경에서 탐색했습니다. 소요시간이 공평하지 않을 수 있습니다."
                         : null;
-                return buildResponse(new ArrayList<>(placeCounts.keySet()), placeCounts, locations, category, note);
+                return buildResponse(closest, placeCounts, locations, category, note);
             }
         }
 
@@ -88,12 +105,16 @@ public class MidpointService {
 
         List<StationInfo> nearby10k = getCandidateStations(avgLat, avgLng, 10000);
         // placeCount(ALL) 내림차순 정렬
-        List<Map.Entry<StationInfo, Integer>> ranked = new ArrayList<>();
-        for (StationInfo s : nearby10k) {
-            int cnt = getPlaceCount(s.lat(), s.lng(), "ALL");
-            ranked.add(Map.entry(s, cnt));
-        }
-        ranked.sort((a, b) -> b.getValue() - a.getValue());
+        List<CompletableFuture<Map.Entry<StationInfo, Integer>>> fallbackFutures = nearby10k.stream()
+                .map(s -> CompletableFuture.supplyAsync(
+                        () -> Map.entry(s, getPlaceCount(s.lat(), s.lng(), "ALL")),
+                        PLACE_COUNT_POOL))
+                .toList();
+
+        List<Map.Entry<StationInfo, Integer>> ranked = fallbackFutures.stream()
+                .map(CompletableFuture::join)
+                .sorted((a, b) -> b.getValue() - a.getValue())
+                .collect(Collectors.toList());
 
         // 10km 내 역이 없으면 무반경 탐색으로 대체
         if (ranked.isEmpty()) {
@@ -110,7 +131,6 @@ public class MidpointService {
             if (rank > 2) break;
             StationInfo s = entry.getKey();
             int[] d = transitService.getAllTransitDurations(locations, s.lng(), s.lat()).block();
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             log.debug("4단계 후보 '{}': placeCount={}", s.name(), entry.getValue());
             fallbackResult.add(MidpointResponse.Candidate.builder()
                     .rank(rank++).nearestStation(s.name())
@@ -220,7 +240,6 @@ public class MidpointService {
         List<ScoredStation> result = new ArrayList<>();
         for (StationInfo s : stations) {
             int[] d = transitService.getAllTransitDurations(locations, s.lng(), s.lat()).block();
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             if (d == null) continue;
             if (Arrays.stream(d).noneMatch(v -> v >= 0)) continue;
             double[] times = Arrays.stream(d).mapToDouble(v -> v < 0 ? 7200.0 : v).toArray();
@@ -261,7 +280,6 @@ public class MidpointService {
 
         for (StationInfo station : stations) {
             int[] durations = transitService.getAllTransitDurations(users, station.lng(), station.lat()).block();
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             if (durations == null) continue;
 
             if (Arrays.stream(durations).noneMatch(d -> d >= 0)) {
@@ -342,8 +360,15 @@ public class MidpointService {
             if (meta == null) return 0;
             Object totalCount = meta.get("total_count");
             return totalCount instanceof Number ? ((Number) totalCount).intValue() : 0;
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 429) {
+                log.warn("Kakao API rate limit 초과 (429): category={}, lat={}, lng={}", categoryCode, lat, lng);
+            } else {
+                log.warn("Kakao 장소수 조회 실패 (HTTP {}): category={}", e.getStatusCode().value(), categoryCode);
+            }
+            return 0;
         } catch (Exception e) {
-            log.warn("장소 수 조회 실패: lat={}, lng={}, category={}", lat, lng, categoryCode);
+            log.warn("Kakao 장소수 조회 실패: category={}, lat={}, lng={}", categoryCode, lat, lng);
             return 0;
         }
     }

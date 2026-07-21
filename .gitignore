@@ -11,3 +11,12 @@ Thumbs.db
 
 # VSCode - launch.json에 API 키가 포함될 수 있음
 .vscode/
+
+# Compiled class files
+backend/bin/
+
+# Portfolio notes
+obsidian/
+
+# k6 load test scripts
+k6*.js
