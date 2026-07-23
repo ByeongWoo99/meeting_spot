@@ -33,6 +33,7 @@ export default function Home() {
   const [loadingStep, setLoadingStep] = useState(0)
   const abortRef = useRef(null)
   const [error, setError] = useState(null)
+  const [errorIndices, setErrorIndices] = useState([])
 
   const LOADING_STEPS = [
     { label: '후보 역 탐색 중...', sub: '주변 지하철역을 검색하고 있어요' },
@@ -53,6 +54,8 @@ export default function Home() {
 
   function handleCountChange(count) {
     setUserCount(count)
+    setErrorIndices([])
+    setError(null)
     setUsers(prev => {
       if (count >= prev.length) {
         const extras = Array.from({ length: count - prev.length }, (_, i) => ({
@@ -75,18 +78,19 @@ export default function Home() {
     setCandidates([])
     setSelectedIdx(0)
     setSearchNote(null)
+    setErrorIndices(prev => prev.filter(i => i !== index))
   }
 
   async function handleSubmit() {
     const valid = users.filter((u) => u.lat && u.lng)
     if (valid.length < users.length) {
-      const missing = users
-        .map((u, i) => (!u.lat || !u.lng) ? `출발지${i + 1}` : null)
-        .filter(Boolean)
-      const joined = missing.length === 1
-        ? missing[0]
-        : missing.slice(0, -1).join(', ') + '와 ' + missing[missing.length - 1]
+      const missingIndices = users.map((u, i) => (!u.lat || !u.lng) ? i : -1).filter(i => i !== -1)
+      const missingLabels = missingIndices.map(i => `출발지${i + 1}`)
+      const joined = missingLabels.length === 1
+        ? missingLabels[0]
+        : missingLabels.slice(0, -1).join(', ') + '와 ' + missingLabels[missingLabels.length - 1]
       setError(`${joined}을 입력해주세요.`)
+      setErrorIndices(missingIndices)
       return
     }
     const allSame = valid.every(
@@ -115,7 +119,7 @@ export default function Home() {
       })
     } catch (e) {
       if (!axios.isCancel(e) && e.name !== 'CanceledError') {
-        setError('중간지점 계산에 실패했습니다. 백엔드 서버를 확인해 주세요.')
+        setError('일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
       }
     } finally {
       setLoading(false)
@@ -158,9 +162,24 @@ export default function Home() {
     setNearbyUser({ address: '', lat: null, lng: null })
   }
 
+  function handleReset() {
+    if (mode === 'midpoint') {
+      setUsers(makeUsers(userCount))
+      setCandidates([])
+      setSelectedIdx(0)
+      setDescriptions({})
+      setSearchNote(null)
+      setError(null)
+      setErrorIndices([])
+    } else {
+      setNearbyUser({ address: '', lat: null, lng: null })
+      setNearbyError(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className={`max-w-2xl mx-auto px-4 py-8 ${candidates.length > 0 ? 'pb-28' : ''}`}>
 
         {/* 헤더 */}
         <div className="text-center mb-8">
@@ -188,6 +207,14 @@ export default function Home() {
 
         {/* 입력 카드 */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-4">
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={handleReset}
+              className="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-500 px-3 py-1 rounded-lg transition-colors"
+            >
+              초기화
+            </button>
+          </div>
           {mode === 'midpoint' ? (
             <>
               <UserCountSelector count={userCount} onChange={handleCountChange} />
@@ -198,27 +225,34 @@ export default function Home() {
                     index={i}
                     value={user}
                     onChange={(loc) => handleLocationChange(i, loc)}
+                    hasError={errorIndices.includes(i)}
                   />
                 ))}
               </div>
               {/* 카테고리 선택 */}
               <div className="mb-4">
-                <p className="text-xs text-gray-400 mb-1">탐색 방식</p>
-                <div className="flex gap-2 mb-3">
-                  <button
-                    onClick={() => setCategory(category === 'SIMPLE' ? 'ALL' : 'SIMPLE')}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
-                      ${category === 'SIMPLE'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                  >
-                    대중교통 소요시간
-                  </button>
+                <p className="text-sm font-semibold text-gray-600 mb-2">탐색 방식</p>
+                <div
+                  onClick={() => setCategory(category === 'SIMPLE' ? 'ALL' : 'SIMPLE')}
+                  className={`flex items-center justify-between cursor-pointer px-3 py-2.5 rounded-xl mb-3 select-none transition-colors duration-200 ${category === 'SIMPLE' ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}
+                >
+                  <div>
+                    <p className={`text-sm font-medium transition-colors duration-200 ${category === 'SIMPLE' ? 'text-blue-700' : 'text-gray-400'}`}>
+                      대중교통 소요시간 
+                    </p>
+                    {category === 'SIMPLE' && (
+                      <p className="text-xs mt-0.5 text-blue-500">소요시간만으로 중간지점을 계산해요</p>
+                    )}
+                  </div>
+                  <div className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ml-3 ${category === 'SIMPLE' ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${category === 'SIMPLE' ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </div>
                 </div>
 
                 {category !== 'SIMPLE' && (
                   <>
-                    <p className="text-xs text-gray-400 mb-2">만남 목적</p>
+                    <p className="text-sm font-semibold text-gray-600 mb-1">만남 목적</p>
+                    <p className="text-xs text-gray-400 mb-2">만남 목적에 맞는 장소 중심으로 찾아요</p>
                     <div className="flex gap-2 flex-wrap">
                       {[
                         { code: 'ALL',     label: '전체' },
@@ -326,15 +360,23 @@ export default function Home() {
               <p className="text-xs text-amber-600 bg-amber-100 rounded-lg px-3 py-2 mb-3">{searchNote}</p>
             )}
 
+          </div>
+        )}
+      </div>
+
+      {/* 하단 고정 버튼: 결과가 있을 때만 표시 */}
+      {candidates.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-6 pt-3 bg-gradient-to-t from-gray-50 via-gray-50/90 to-transparent pointer-events-none">
+          <div className="max-w-2xl mx-auto pointer-events-auto">
             <button
               onClick={handleNext}
-              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors"
+              className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-colors text-base"
             >
               주변 추천 장소 보기 →
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 계산 중 로딩 팝업 */}
       {loading && (

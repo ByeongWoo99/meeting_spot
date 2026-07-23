@@ -9,7 +9,7 @@ const PLACE_CATEGORY_COLORS = {
   CT1: '#A855F7',
 }
 
-export default function Map({ locations, midpoint, selectedPlace }) {
+export default function Map({ locations, midpoint, selectedPlace, fillHeight = false }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
@@ -96,13 +96,17 @@ export default function Map({ locations, midpoint, selectedPlace }) {
       content: `<div style="padding:6px 10px;font-size:13px;font-weight:bold;white-space:nowrap">${selectedPlace.name}</div>`,
     })
     infowindow.open(mapRef.current, marker)
-    placeMarkersRef.current.push(marker)
+placeMarkersRef.current.push(marker)
     placeInfowindowsRef.current.push(infowindow)
     mapRef.current.panTo(position)
   }, [selectedPlace])
 
   return (
-    <div ref={containerRef} className="w-full rounded-xl overflow-hidden" style={{ height: '400px' }} />
+    <div
+      ref={containerRef}
+      className="w-full"
+      style={{ height: fillHeight ? '100%' : '400px' }}
+    />
   )
 }
 
