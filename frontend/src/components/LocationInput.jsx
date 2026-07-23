@@ -1,11 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
 
-export default function LocationInput({ index, value, onChange }) {
+export default function LocationInput({ index, value, onChange, hasError = false }) {
   const [keyword, setKeyword] = useState(value.address || '')
   const [suggestions, setSuggestions] = useState([])
   const [open, setOpen] = useState(false)
   const debounceRef = useRef(null)
   const wrapperRef = useRef(null)
+
+  // 부모가 value.address를 초기화했을 때 내부 keyword도 동기화
+  useEffect(() => {
+    setKeyword(value.address || '')
+  }, [value.address])
 
   // 외부 클릭 시 드롭다운 닫기
   useEffect(() => {
@@ -81,14 +86,14 @@ export default function LocationInput({ index, value, onChange }) {
             onChange={handleInput}
             onFocus={() => suggestions.length > 0 && setOpen(true)}
             placeholder={`출발지 ${index + 1} 검색`}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className={`w-full border rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 transition-colors ${hasError ? 'border-red-400 focus:ring-red-300' : 'border-gray-300 focus:ring-blue-400'}`}
           />
           {keyword && (
             <button
               onMouseDown={(e) => { e.preventDefault(); handleClear() }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full bg-gray-300 hover:bg-gray-400 transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full bg-red-100 hover:bg-red-200 transition-colors"
             >
-              <span className="text-white text-xs leading-none">✕</span>
+              <span className="text-red-400 text-xs leading-none">✕</span>
             </button>
           )}
         </div>

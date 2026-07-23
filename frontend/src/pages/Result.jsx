@@ -62,6 +62,55 @@ export default function Result() {
   const [placesLoading, setPlacesLoading] = useState(false)
   const [selectedPlace, setSelectedPlace] = useState(null)
 
+  const SHEET_HEIGHTS = { collapsed: 80, default: 360, expanded: 520 }
+  const SHEET_CYCLE = { collapsed: 'default', default: 'expanded', expanded: 'collapsed' }
+  const [sheetState, setSheetState] = useState('default')
+  const [dragHeight, setDragHeight] = useState(null)
+  const [aiExpanded, setAiExpanded] = useState(false)
+  const [bottomTab, setBottomTab] = useState('places')
+
+  useEffect(() => { setAiExpanded(false) }, [activeIdx])
+  const cycleSheet = () => setSheetState(s => SHEET_CYCLE[s])
+
+  const onHandleDragStart = (e) => {
+    e.preventDefault()
+    const startY = e.touches ? e.touches[0].clientY : e.clientY
+    const startHeight = SHEET_HEIGHTS[sheetState]
+    let moved = false
+
+    const onMove = (ev) => {
+      const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY
+      const dy = startY - clientY
+      if (Math.abs(dy) > 4) moved = true
+      setDragHeight(Math.max(60, Math.min(560, startHeight + dy)))
+    }
+
+    const onEnd = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onEnd)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onEnd)
+      if (!moved) {
+        setDragHeight(null)
+        cycleSheet()
+        return
+      }
+      setDragHeight(prev => {
+        const cur = prev ?? startHeight
+        const closest = Object.entries(SHEET_HEIGHTS).reduce((best, [st, h]) =>
+          Math.abs(h - cur) < Math.abs(SHEET_HEIGHTS[best] - cur) ? st : best
+        , 'default')
+        setSheetState(closest)
+        return null
+      })
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onEnd)
+    window.addEventListener('touchmove', onMove, { passive: false })
+    window.addEventListener('touchend', onEnd)
+  }
+
   const [descriptions, setDescriptions] = useState(stateDescriptions)
 
   const [carDirections, setCarDirections] = useState([])
@@ -123,14 +172,13 @@ export default function Result() {
   return (
     <>
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
-      <div className="max-w-2xl w-full mx-auto flex flex-col h-full">
+      <div className="max-w-2xl w-full mx-auto flex flex-col h-full relative">
 
-        {/* 상단 고정 영역 */}
+        {/* 상단 고정 영역: 헤더 + AI 설명 + 안내 + 후보 탭 */}
         <div className="flex-shrink-0 px-4 pt-4">
-          {/* 헤더 */}
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
-              <button onClick={() => navigate('/')} className="text-gray-400 hover:text-gray-600 text-sm">
+              <button onClick={() => navigate('/')} className="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
                 ← 다시 찾기
               </button>
               <div>
@@ -148,23 +196,30 @@ export default function Result() {
             </button>
           </div>
 
-          {/* AI 후보 설명 */}
           {descriptions[midpoint.rank] ? (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-3">
-              <p className="text-xs text-blue-700">{descriptions[midpoint.rank]}</p>
+            <div className="mb-3">
+              <button
+                onClick={() => setAiExpanded(v => !v)}
+                className="text-xs text-blue-500 hover:text-blue-700 font-medium flex items-center gap-1 px-1 mb-1"
+              >
+                {aiExpanded ? '▲ AI 설명 접기' : '▼ AI 설명 보기'}
+              </button>
+              {aiExpanded && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+                  <p className="text-xs text-blue-700">{descriptions[midpoint.rank]}</p>
+                </div>
+              )}
             </div>
           ) : midpoint.nearestStation && (
             <p className="text-xs text-blue-400 px-1 mb-3">AI 설명 생성 중...</p>
           )}
 
-          {/* 탐색 안내 메시지 */}
           {searchNote && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
               <p className="text-xs text-amber-700">{searchNote}</p>
             </div>
           )}
 
-          {/* 후보 탭 */}
           {candidates.length === 2 && (
             <div className="flex gap-2 mb-3">
               {candidates.map((c, i) => (
@@ -181,27 +236,82 @@ export default function Result() {
               ))}
             </div>
           )}
+        </div>
 
-          {/* 지도 */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-2 mb-3">
-            <Map locations={users} midpoint={midpoint} selectedPlace={selectedPlace} />
+        {/* 지도 영역: 고정 크기 */}
+        <div className="flex-1 min-h-0">
+          <Map locations={users} midpoint={midpoint} selectedPlace={selectedPlace} fillHeight />
+        </div>
+
+        {/* 바텀 시트: 지도 위 absolute 오버레이 */}
+        <div
+          className="absolute left-0 right-0 bottom-0 z-50 rounded-t-2xl flex flex-col overflow-hidden"
+          style={{
+            height: dragHeight ?? SHEET_HEIGHTS[sheetState],
+            background: 'rgba(255,255,255,0.65)',
+            boxShadow: '0 -2px 12px rgba(0,0,0,0.08)',
+            transition: dragHeight !== null ? 'none' : 'height 0.3s cubic-bezier(0.4,0,0.2,1)',
+          }}
+        >
+          {/* 핸들: 드래그 + 탭(4px 이하 이동 시 cycleSheet) */}
+          <div
+            onMouseDown={onHandleDragStart}
+            onTouchStart={onHandleDragStart}
+            className="flex flex-col items-center justify-center min-h-[50px] cursor-grab active:cursor-grabbing flex-shrink-0 select-none gap-1"
+          >
+            <div className="w-10 h-1 bg-gray-200 rounded-full" />
+            {sheetState === 'collapsed' && !selectedPlace && (
+              <p className="text-xs font-medium text-gray-500">↑ 장소 목록 보기</p>
+            )}
+            {sheetState === 'expanded' && (
+              <p className="text-xs font-medium text-gray-500">↓ 접기</p>
+            )}
           </div>
 
-          {/* 교통편 정보 / 장소 정보 */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-3 mb-3">
-            {isNearbyMode ? (
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-800">{midpoint.address}</p>
-                <a
-                  href={`https://map.kakao.com/link/map/${encodeURIComponent(midpoint.address)},${midpoint.lat},${midpoint.lng}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm text-blue-500 font-semibold hover:underline whitespace-nowrap ml-4"
-                >
-                  지도보기
-                </a>
-              </div>
-            ) : (
+          {/* 미니 카드: collapsed 상태이고 장소가 선택된 경우에만 표시 */}
+          {sheetState === 'collapsed' && selectedPlace && (
+            <div className="flex items-center gap-2 px-4 pb-3 flex-shrink-0">
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                { FD6: 'bg-orange-100 text-orange-700', CE7: 'bg-yellow-100 text-yellow-700', AT4: 'bg-green-100 text-green-700', CT1: 'bg-purple-100 text-purple-700' }[selectedPlace.categoryCode] || 'bg-gray-100 text-gray-600'
+              }`}>
+                {{ FD6: '맛집', CE7: '카페', AT4: '명소', CT1: '문화시설' }[selectedPlace.categoryCode] || selectedPlace.categoryCode}
+              </span>
+              <span className="text-sm font-bold text-gray-800 flex-1 min-w-0 truncate">{selectedPlace.name}</span>
+              {selectedPlace.distance > 0 && (
+                <span className="text-xs text-gray-400 whitespace-nowrap">{selectedPlace.distance}m</span>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); setSheetState('expanded'); setBottomTab('places') }}
+                className="text-xs font-bold bg-blue-500 text-white px-3 py-1 rounded-full whitespace-nowrap"
+              >
+                목록으로 ↑
+              </button>
+            </div>
+          )}
+
+          {/* 바텀 탭: 경로 정보 | 장소 목록 (주변 장소 모드에서는 탭 없이 장소만) */}
+          {!isNearbyMode && sheetState !== 'collapsed' && (
+            <div className="flex gap-2 px-4 pt-1 pb-2 flex-shrink-0">
+              <button
+                onClick={() => setBottomTab('routes')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-colors
+                  ${bottomTab === 'routes' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+              >
+                경로 정보
+              </button>
+              <button
+                onClick={() => setBottomTab('places')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-colors
+                  ${bottomTab === 'places' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+              >
+                장소 목록
+              </button>
+            </div>
+          )}
+
+          {/* 경로 정보 탭 */}
+          {!isNearbyMode && bottomTab === 'routes' && sheetState !== 'collapsed' && (
+            <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
               <DirectionInfo
                 carDirections={carDirections}
                 carLoading={carLoading}
@@ -214,36 +324,51 @@ export default function Result() {
                 users={users}
                 midpoint={midpoint}
               />
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* 카테고리 탭 */}
-          <div className="bg-white rounded-t-2xl border border-b-0 border-gray-100 shadow-sm px-4 pt-4 pb-2">
-            <p className="text-xs font-semibold text-gray-400 mb-2">주변 추천 장소</p>
-            <CategoryFilter selected={category} onChange={setCategory} />
-          </div>
-        </div>
-
-        {/* 스크롤 되는 장소 목록 */}
-        <div className="flex-1 overflow-y-auto px-4">
-          <div className="bg-white rounded-b-2xl border border-t-0 border-gray-100 shadow-sm px-4 pb-4">
-            {placesLoading ? (
-              <div className="text-center py-10 text-gray-400 text-sm">장소를 검색 중...</div>
-            ) : places.length === 0 ? (
-              <div className="text-center py-10 text-gray-400 text-sm">주변 장소를 찾지 못했습니다.</div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {places.map((place) => (
-                  <PlaceCard
-                    key={place.id}
-                    place={place}
-                    selected={selectedPlace?.id === place.id}
-                    onClick={setSelectedPlace}
-                  />
-                ))}
+          {/* 장소 목록 탭 (주변 장소 모드 포함) */}
+          {(isNearbyMode || bottomTab === 'places') && sheetState !== 'collapsed' && (
+            <>
+              {isNearbyMode && (
+                <div className="flex-shrink-0 px-4 pb-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{midpoint.address}</p>
+                    <a
+                      href={`https://map.kakao.com/link/map/${encodeURIComponent(midpoint.address)},${midpoint.lat},${midpoint.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-blue-500 font-semibold hover:underline whitespace-nowrap ml-3"
+                    >
+                      지도보기
+                    </a>
+                  </div>
+                </div>
+              )}
+              <div className="flex-shrink-0 px-4 pb-2">
+                <p className="text-xs font-semibold text-gray-400 mb-2">주변 추천 장소</p>
+                <CategoryFilter selected={category} onChange={setCategory} />
               </div>
-            )}
-          </div>
+              <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
+                {placesLoading ? (
+                  <div className="text-center py-8 text-gray-400 text-sm">장소를 검색 중...</div>
+                ) : places.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400 text-sm">주변 장소를 찾지 못했습니다.</div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {places.map((place) => (
+                      <PlaceCard
+                        key={place.id}
+                        place={place}
+                        selected={selectedPlace?.id === place.id}
+                        onClick={(place) => { setSelectedPlace(place); setSheetState('collapsed') }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
       </div>

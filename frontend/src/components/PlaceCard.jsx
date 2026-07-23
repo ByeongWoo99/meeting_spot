@@ -42,7 +42,7 @@ export default function PlaceCard({ place, onClick, selected }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="text-xs text-blue-500 hover:underline flex-shrink-0"
+            className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-500 font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
           >
             상세보기
           </a>
