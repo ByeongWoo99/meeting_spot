@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -22,8 +22,28 @@ jobs:
         run: chmod +x backend/gradlew
 
       - name: Build backend
-        run: ./gradlew build -x test
+        run: ./gradlew bootJar -x test
         working-directory: backend
+
+      - name: Deploy backend to EC2
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "backend/build/libs/meeting-spot-0.0.1-SNAPSHOT.jar"
+          target: "/home/ubuntu/app/"
+          strip_components: 3
+
+      - name: Restart backend service
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_KEY }}
+          script: sudo systemctl restart meetingspot
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -43,3 +63,14 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
+
+      - name: Deploy frontend to EC2
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "frontend/dist/"
+          target: "/home/ubuntu/"
+          strip_components: 1
