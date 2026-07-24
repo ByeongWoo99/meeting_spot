@@ -63,6 +63,8 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
+        env:
+          VITE_KAKAO_JS_KEY: ${{ secrets.VITE_KAKAO_JS_KEY }}
 
       - name: Deploy frontend to EC2
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
