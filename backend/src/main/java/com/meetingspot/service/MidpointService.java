@@ -2,6 +2,8 @@ package com.meetingspot.service;
 
 import com.meetingspot.dto.request.MidpointRequest;
 import com.meetingspot.dto.response.MidpointResponse;
+import com.meetingspot.entity.PlaceCache;
+import com.meetingspot.repository.PlaceCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -9,6 +11,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -22,6 +25,7 @@ public class MidpointService {
 
     private final WebClient kakaoWebClient;
     private final TransitService transitService;
+    private final PlaceCacheRepository placeCacheRepo;
 
     private static final int CATEGORY_RADIUS_M = 736;
     private static final ExecutorService PLACE_COUNT_POOL = Executors.newFixedThreadPool(6);
@@ -60,7 +64,7 @@ public class MidpointService {
             long placeCountStart = System.currentTimeMillis();
             List<CompletableFuture<Map.Entry<StationInfo, Integer>>> futures = stations.stream()
                     .map(s -> CompletableFuture.supplyAsync(
-                            () -> Map.entry(s, getPlaceCount(s.lat(), s.lng(), category)),
+                            () -> Map.entry(s, getPlaceCount(s.lat(), s.lng(), s.name(), category)),
                             PLACE_COUNT_POOL))
                     .toList();
 
@@ -85,7 +89,7 @@ public class MidpointService {
         }
 
         // 3단계: 중간 좌표 자체 확인
-        int midCount = getPlaceCount(avgLat, avgLng, category);
+        int midCount = getPlaceCount(avgLat, avgLng, null, category);
         if (midCount >= CATEGORY_MIN_COUNT) {
             String addr = getAddressFromCoords(avgLat, avgLng);
             String note = "중간 좌표 근처에 적합한 장소가 없어 더 넓은 반경에서 탐색했습니다. 소요시간이 공평하지 않을 수 있습니다.";
@@ -107,7 +111,7 @@ public class MidpointService {
         // placeCount(ALL) 내림차순 정렬
         List<CompletableFuture<Map.Entry<StationInfo, Integer>>> fallbackFutures = nearby10k.stream()
                 .map(s -> CompletableFuture.supplyAsync(
-                        () -> Map.entry(s, getPlaceCount(s.lat(), s.lng(), "ALL")),
+                        () -> Map.entry(s, getPlaceCount(s.lat(), s.lng(), s.name(), "ALL")),
                         PLACE_COUNT_POOL))
                 .toList();
 
@@ -120,7 +124,7 @@ public class MidpointService {
         if (ranked.isEmpty()) {
             List<StationInfo> any = getNearestStationsNoRadius(avgLat, avgLng);
             for (StationInfo s : any) {
-                ranked.add(Map.entry(s, getPlaceCount(s.lat(), s.lng(), "ALL")));
+                ranked.add(Map.entry(s, getPlaceCount(s.lat(), s.lng(), s.name(), "ALL")));
             }
             ranked.sort((a, b) -> b.getValue() - a.getValue());
         }
@@ -130,7 +134,7 @@ public class MidpointService {
         for (Map.Entry<StationInfo, Integer> entry : ranked) {
             if (rank > 2) break;
             StationInfo s = entry.getKey();
-            int[] d = transitService.getAllTransitDurations(locations, s.lng(), s.lat()).block();
+            int[] d = transitService.getAllTransitDurations(locations, s.lng(), s.lat(), s.name()).block();
             log.debug("4단계 후보 '{}': placeCount={}", s.name(), entry.getValue());
             fallbackResult.add(MidpointResponse.Candidate.builder()
                     .rank(rank++).nearestStation(s.name())
@@ -151,7 +155,7 @@ public class MidpointService {
             StationInfo nearest = last.stream()
                     .min(Comparator.comparingDouble(s -> haversine(avgLat, avgLng, s.lat(), s.lng())))
                     .get();
-            int[] d = transitService.getAllTransitDurations(locations, nearest.lng(), nearest.lat()).block();
+            int[] d = transitService.getAllTransitDurations(locations, nearest.lng(), nearest.lat(), nearest.name()).block();
             String addr = getAddressFromCoords(nearest.lat(), nearest.lng());
             return MidpointResponse.builder()
                     .candidates(List.of(MidpointResponse.Candidate.builder()
@@ -239,7 +243,7 @@ public class MidpointService {
                                                   List<MidpointRequest.LocationDto> locations) {
         List<ScoredStation> result = new ArrayList<>();
         for (StationInfo s : stations) {
-            int[] d = transitService.getAllTransitDurations(locations, s.lng(), s.lat()).block();
+            int[] d = transitService.getAllTransitDurations(locations, s.lng(), s.lat(), s.name()).block();
             if (d == null) continue;
             if (Arrays.stream(d).noneMatch(v -> v >= 0)) continue;
             double[] times = Arrays.stream(d).mapToDouble(v -> v < 0 ? 7200.0 : v).toArray();
@@ -279,7 +283,7 @@ public class MidpointService {
         double totalTransitScore = 0;
 
         for (StationInfo station : stations) {
-            int[] durations = transitService.getAllTransitDurations(users, station.lng(), station.lat()).block();
+            int[] durations = transitService.getAllTransitDurations(users, station.lng(), station.lat(), station.name()).block();
             if (durations == null) continue;
 
             if (Arrays.stream(durations).noneMatch(d -> d >= 0)) {
@@ -337,16 +341,24 @@ public class MidpointService {
         };
     }
 
-    private int getPlaceCount(double lat, double lng, String category) {
+    private int getPlaceCount(double lat, double lng, String stationName, String category) {
         int total = 0;
         for (String code : resolveCategoryCodes(category)) {
-            total += queryPlaceCount(lat, lng, code);
+            total += queryPlaceCount(lat, lng, stationName, code);
         }
         return total;
     }
 
     @SuppressWarnings("unchecked")
-    private int queryPlaceCount(double lat, double lng, String categoryCode) {
+    private int queryPlaceCount(double lat, double lng, String stationName, String categoryCode) {
+        if (stationName != null) {
+            LocalDateTime now = LocalDateTime.now();
+            Optional<PlaceCache> cached = placeCacheRepo.findByStationNameAndCategoryCode(stationName, categoryCode);
+            if (cached.isPresent() && cached.get().getExpiresAt().isAfter(now)) {
+                return cached.get().getPlaceCount();
+            }
+        }
+
         try {
             Map<String, Object> response = kakaoWebClient.get()
                     .uri("/v2/local/search/category.json?category_group_code={code}&x={lng}&y={lat}&radius={radius}&size=1",
@@ -359,7 +371,28 @@ public class MidpointService {
             Map<String, Object> meta = (Map<String, Object>) response.get("meta");
             if (meta == null) return 0;
             Object totalCount = meta.get("total_count");
-            return totalCount instanceof Number ? ((Number) totalCount).intValue() : 0;
+            int count = totalCount instanceof Number ? ((Number) totalCount).intValue() : 0;
+
+            if (stationName != null) {
+                LocalDateTime now = LocalDateTime.now();
+                Optional<PlaceCache> existing = placeCacheRepo.findByStationNameAndCategoryCode(stationName, categoryCode);
+                try {
+                    if (existing.isPresent()) {
+                        placeCacheRepo.delete(existing.get());
+                    }
+                    placeCacheRepo.save(PlaceCache.builder()
+                            .stationName(stationName)
+                            .categoryCode(categoryCode)
+                            .placeCount(count)
+                            .createdAt(now)
+                            .expiresAt(now.plusDays(7))
+                            .build());
+                } catch (Exception e) {
+                    log.warn("place_cache 저장 실패 (무시): {}", e.getMessage());
+                }
+            }
+
+            return count;
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().value() == 429) {
                 log.warn("Kakao API rate limit 초과 (429): category={}, lat={}, lng={}", categoryCode, lat, lng);

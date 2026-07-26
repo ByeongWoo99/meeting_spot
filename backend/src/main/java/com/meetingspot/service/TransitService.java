@@ -1,6 +1,8 @@
 package com.meetingspot.service;
 
 import com.meetingspot.dto.request.MidpointRequest;
+import com.meetingspot.entity.TransitCache;
+import com.meetingspot.repository.TransitCacheRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -8,8 +10,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -17,11 +21,14 @@ public class TransitService {
 
     private final WebClient odsayWebClient;
     private final String apiKey;
+    private final TransitCacheRepository transitCacheRepo;
 
     public TransitService(WebClient odsayWebClient,
-                          @Value("${odsay.api.key}") String apiKey) {
+                          @Value("${odsay.api.key}") String apiKey,
+                          TransitCacheRepository transitCacheRepo) {
         this.odsayWebClient = odsayWebClient;
         this.apiKey = apiKey;
+        this.transitCacheRepo = transitCacheRepo;
     }
 
     public Mono<Integer> getTransitDuration(double originLng, double originLat,
@@ -220,16 +227,50 @@ public class TransitService {
     }
 
     public Mono<int[]> getAllTransitDurations(List<MidpointRequest.LocationDto> users,
-                                              double stationLng, double stationLat) {
+                                              double stationLng, double stationLat,
+                                              String stationName) {
         long totalStart = System.currentTimeMillis();
         int[] durations = new int[users.size()];
+        LocalDateTime now = LocalDateTime.now();
+        int cacheHits = 0;
+
         for (int i = 0; i < users.size(); i++) {
             MidpointRequest.LocationDto u = users.get(i);
-            Integer duration = getTransitDuration(u.getLng(), u.getLat(), stationLng, stationLat).block();
-            durations[i] = duration != null ? duration : -1;
+            double roundedLat = Math.round(u.getLat() * 100.0) / 100.0;
+            double roundedLng = Math.round(u.getLng() * 100.0) / 100.0;
+
+            Optional<TransitCache> cached = transitCacheRepo
+                    .findByOriginLatAndOriginLngAndStationName(roundedLat, roundedLng, stationName);
+
+            if (cached.isPresent() && cached.get().getExpiresAt().isAfter(now)) {
+                durations[i] = cached.get().getDurationSec();
+                cacheHits++;
+            } else {
+                Integer duration = getTransitDuration(u.getLng(), u.getLat(), stationLng, stationLat).block();
+                durations[i] = duration != null ? duration : -1;
+
+                TransitCache entry = TransitCache.builder()
+                        .originLat(roundedLat)
+                        .originLng(roundedLng)
+                        .stationName(stationName)
+                        .durationSec(durations[i])
+                        .createdAt(now)
+                        .expiresAt(now.plusDays(30))
+                        .build();
+
+                try {
+                    if (cached.isPresent()) {
+                        transitCacheRepo.delete(cached.get());
+                    }
+                    transitCacheRepo.save(entry);
+                } catch (Exception e) {
+                    log.warn("transit_cache 저장 실패 (무시): {}", e.getMessage());
+                }
+            }
         }
-        log.info("OdSay 전체 소요시간: {}ms (사용자 {}명, 역 {},{} 기준)",
-                System.currentTimeMillis() - totalStart, users.size(), stationLng, stationLat);
+
+        log.info("OdSay 전체 소요시간: {}ms (사용자 {}명, 캐시 히트 {}/{})",
+                System.currentTimeMillis() - totalStart, users.size(), cacheHits, users.size());
         return Mono.just(durations);
     }
 }
