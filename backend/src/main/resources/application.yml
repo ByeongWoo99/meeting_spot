@@ -35,5 +35,7 @@ gemini:
     base-url: https://generativelanguage.googleapis.com
 
 logging:
+  file:
+    name: logs/app.log
   level:
     com.meetingspot: DEBUG

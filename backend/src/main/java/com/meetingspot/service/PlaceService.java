@@ -37,6 +37,7 @@ public class PlaceService {
     @SuppressWarnings("unchecked")
     private List<PlaceDto> searchByCategory(double lat, double lng, String categoryCode, int radius) {
         try {
+            long start = System.currentTimeMillis();
             Map<String, Object> response = kakaoWebClient.get()
                     .uri("/v2/local/search/category.json?category_group_code={code}&x={lng}&y={lat}&radius={radius}&sort=distance&size=15",
                             categoryCode, lng, lat, radius)
@@ -48,6 +49,8 @@ public class PlaceService {
 
             List<Map<String, Object>> documents = (List<Map<String, Object>>) response.get("documents");
             if (documents == null) return List.of();
+
+            log.info("Kakao 장소 검색 완료: {}ms (카테고리: {}, 결과: {}개)", System.currentTimeMillis() - start, categoryCode, documents.size());
 
             return documents.stream().map(doc -> PlaceDto.builder()
                     .id((String) doc.get("id"))
