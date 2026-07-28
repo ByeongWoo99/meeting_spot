@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-
-const MARKER_COLORS = ['#3B82F6', '#EF4444', '#22C55E', '#A855F7', '#F97316', '#EC4899']
+import { MARKER_COLORS } from '../utils/markerColors'
 
 const PLACE_CATEGORY_COLORS = {
   FD6: '#F97316',
@@ -96,7 +95,7 @@ export default function Map({ locations, midpoint, selectedPlace, fillHeight = f
       content: `<div style="padding:6px 10px;font-size:13px;font-weight:bold;white-space:nowrap">${selectedPlace.name}</div>`,
     })
     infowindow.open(mapRef.current, marker)
-placeMarkersRef.current.push(marker)
+    placeMarkersRef.current.push(marker)
     placeInfowindowsRef.current.push(infowindow)
     mapRef.current.panTo(position)
   }, [selectedPlace])

@@ -18,15 +18,14 @@ function makeUsers(count) {
 
 export default function Home() {
   const navigate = useNavigate()
-  const [mode, setMode] = useState('midpoint') // 'midpoint' | 'nearby'
+  const [mode, setMode] = useState('midpoint')
 
-  // 중간지점 모드 상태
   const [userCount, setUserCount] = useState(2)
   const [users, setUsers] = useState(makeUsers(2))
   const [category, setCategory] = useState('ALL')
-  const [candidates, setCandidates] = useState([])   // 후보 역 배열 (최대 2개)
-  const [selectedIdx, setSelectedIdx] = useState(0)  // 선택된 후보 인덱스
-  const [descriptions, setDescriptions] = useState({}) // { rank: description }
+  const [candidates, setCandidates] = useState([])
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const [descriptions, setDescriptions] = useState({})
   const [searchNote, setSearchNote] = useState(null)
   const midpoint = candidates[selectedIdx] || null
   const [loading, setLoading] = useState(false)
@@ -35,11 +34,24 @@ export default function Home() {
   const [error, setError] = useState(null)
   const [errorIndices, setErrorIndices] = useState([])
 
+  const [nearbyUser, setNearbyUser] = useState({ address: '', lat: null, lng: null })
+  const [nearbyError, setNearbyError] = useState(null)
+
+  const [isPC, setIsPC] = useState(() => window.innerWidth >= 768)
+  const resultRef = useRef(null)
+
   const LOADING_STEPS = [
     { label: '후보 역 탐색 중...', sub: '주변 지하철역을 검색하고 있어요' },
     { label: '대중교통 소요시간 조회 중...', sub: '각 출발지에서 후보 역까지 시간을 계산하고 있어요' },
     { label: '최적 중간지점 계산 중...', sub: '가장 공평한 장소를 찾고 있어요' },
   ]
+
+  useEffect(() => {
+    const mql = window.matchMedia('(min-width: 768px)')
+    const handler = (e) => setIsPC(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
 
   useEffect(() => {
     if (!loading) { setLoadingStep(0); return }
@@ -48,9 +60,11 @@ export default function Home() {
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [loading])
 
-  // 주변 장소 모드 상태
-  const [nearbyUser, setNearbyUser] = useState({ address: '', lat: null, lng: null })
-  const [nearbyError, setNearbyError] = useState(null)
+  useEffect(() => {
+    if (candidates.length > 0 && !isPC && resultRef.current) {
+      resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [candidates.length])
 
   function handleCountChange(count) {
     setUserCount(count)
@@ -93,9 +107,7 @@ export default function Home() {
       setErrorIndices(missingIndices)
       return
     }
-    const allSame = valid.every(
-      (u) => u.lat === valid[0].lat && u.lng === valid[0].lng
-    )
+    const allSame = valid.every((u) => u.lat === valid[0].lat && u.lng === valid[0].lng)
     if (allSame) {
       setError('서로 다른 출발지를 입력해주세요.')
       return
@@ -177,194 +189,256 @@ export default function Home() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className={`max-w-2xl mx-auto px-4 py-8 ${candidates.length > 0 ? 'pb-28' : ''}`}>
+  // ── 공통 폼 콘텐츠: 입력 영역 ──
+  const formTop = (
+    <>
+      {/* 헤더 */}
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">중간지점 만남 장소 추천</h1>
+        <p className="text-gray-500 text-sm">출발지를 입력하면 모두에게 공평한 만남 장소를 찾아드려요</p>
+      </div>
 
-        {/* 헤더 */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">중간지점 만남 장소 추천</h1>
-          <p className="text-gray-500 text-sm">출발지를 입력하면 모두에게 공평한 만남 장소를 찾아드려요</p>
-        </div>
+      {/* 모드 탭 */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => switchMode('midpoint')}
+          className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors
+            ${mode === 'midpoint' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
+        >
+          중간지점 찾기
+        </button>
+        <button
+          onClick={() => switchMode('nearby')}
+          className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors
+            ${mode === 'nearby' ? 'bg-green-500 text-white' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
+        >
+          주변 명소 찾기
+        </button>
+      </div>
 
-        {/* 모드 탭 */}
-        <div className="flex gap-2 mb-3">
+      {/* 입력 카드 */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-4">
+        <div className="flex justify-end mb-2">
           <button
-            onClick={() => switchMode('midpoint')}
-            className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors
-              ${mode === 'midpoint' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
+            onClick={handleReset}
+            className="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-500 px-3 py-1 rounded-lg transition-colors"
           >
-            중간지점 찾기
-          </button>
-          <button
-            onClick={() => switchMode('nearby')}
-            className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors
-              ${mode === 'nearby' ? 'bg-green-500 text-white' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
-          >
-            주변 명소 찾기
+            초기화
           </button>
         </div>
-
-        {/* 입력 카드 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-4">
-          <div className="flex justify-end mb-2">
-            <button
-              onClick={handleReset}
-              className="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-500 px-3 py-1 rounded-lg transition-colors"
-            >
-              초기화
-            </button>
-          </div>
-          {mode === 'midpoint' ? (
-            <>
-              <UserCountSelector count={userCount} onChange={handleCountChange} />
-              <div className="mb-4">
-                {users.map((user, i) => (
-                  <LocationInput
-                    key={i}
-                    index={i}
-                    value={user}
-                    onChange={(loc) => handleLocationChange(i, loc)}
-                    hasError={errorIndices.includes(i)}
-                  />
-                ))}
-              </div>
-              {/* 카테고리 선택 */}
-              <div className="mb-4">
-                <p className="text-sm font-semibold text-gray-600 mb-2">탐색 방식</p>
-                <div
-                  onClick={() => setCategory(category === 'SIMPLE' ? 'ALL' : 'SIMPLE')}
-                  className={`flex items-center justify-between cursor-pointer px-3 py-2.5 rounded-xl mb-3 select-none transition-colors duration-200 ${category === 'SIMPLE' ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}
-                >
-                  <div>
-                    <p className={`text-sm font-medium transition-colors duration-200 ${category === 'SIMPLE' ? 'text-blue-700' : 'text-gray-400'}`}>
-                      대중교통 소요시간 
-                    </p>
-                    {category === 'SIMPLE' && (
-                      <p className="text-xs mt-0.5 text-blue-500">소요시간만으로 중간지점을 계산해요</p>
-                    )}
-                  </div>
-                  <div className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ml-3 ${category === 'SIMPLE' ? 'bg-blue-500' : 'bg-gray-200'}`}>
-                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${category === 'SIMPLE' ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                  </div>
+        {mode === 'midpoint' ? (
+          <>
+            <UserCountSelector count={userCount} onChange={handleCountChange} />
+            <div className="mb-4">
+              {users.map((user, i) => (
+                <LocationInput
+                  key={i}
+                  index={i}
+                  value={user}
+                  onChange={(loc) => handleLocationChange(i, loc)}
+                  hasError={errorIndices.includes(i)}
+                />
+              ))}
+            </div>
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-gray-600 mb-2">탐색 방식</p>
+              <div
+                onClick={() => setCategory(category === 'SIMPLE' ? 'ALL' : 'SIMPLE')}
+                className={`flex items-center justify-between cursor-pointer px-3 py-2.5 rounded-xl mb-3 select-none transition-colors duration-200 ${category === 'SIMPLE' ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}
+              >
+                <div>
+                  <p className={`text-sm font-medium transition-colors duration-200 ${category === 'SIMPLE' ? 'text-blue-700' : 'text-gray-400'}`}>
+                    대중교통 소요시간
+                  </p>
+                  {category === 'SIMPLE' && (
+                    <p className="text-xs mt-0.5 text-blue-500">소요시간만으로 중간지점을 계산해요</p>
+                  )}
                 </div>
-
-                {category !== 'SIMPLE' && (
-                  <>
-                    <p className="text-sm font-semibold text-gray-600 mb-1">만남 목적</p>
-                    <p className="text-xs text-gray-400 mb-2">만남 목적에 맞는 장소 중심으로 찾아요</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {[
-                        { code: 'ALL',     label: '전체' },
-                        { code: 'FD6',     label: '음식점' },
-                        { code: 'CE7',     label: '카페' },
-                        { code: 'CT1_AT4', label: '문화·명소' },
-                      ].map(({ code, label }) => (
-                        <button
-                          key={code}
-                          onClick={() => setCategory(code)}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
-                            ${category === code
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <div className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ml-3 ${category === 'SIMPLE' ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                  <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${category === 'SIMPLE' ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </div>
               </div>
+              {category !== 'SIMPLE' && (
+                <>
+                  <p className="text-sm font-semibold text-gray-600 mb-1">만남 목적</p>
+                  <p className="text-xs text-gray-400 mb-2">만남 목적에 맞는 장소 중심으로 찾아요</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {[
+                      { code: 'ALL',     label: '전체' },
+                      { code: 'FD6',     label: '음식점' },
+                      { code: 'CE7',     label: '카페' },
+                      { code: 'CT1_AT4', label: '문화·명소' },
+                    ].map(({ code, label }) => (
+                      <button
+                        key={code}
+                        onClick={() => setCategory(code)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
+                          ${category === code ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-semibold py-3 rounded-xl transition-colors"
+            >
+              {loading ? '계산 중...' : '중간지점 찾기'}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500 mb-4">위치를 입력하면 주변 맛집·카페·명소를 찾아드려요</p>
+            <LocationInput
+              index={0}
+              value={nearbyUser}
+              onChange={(loc) => setNearbyUser(prev => ({ ...prev, ...loc }))}
+            />
+            {nearbyError && <p className="text-red-500 text-sm mb-3">{nearbyError}</p>}
+            <button
+              onClick={handleNearbySearch}
+              className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 rounded-xl transition-colors"
+            >
+              주변 장소 찾기
+            </button>
+          </>
+        )}
+      </div>
+    </>
+  )
 
-              {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+  // ── 공통 폼 콘텐츠: 결과 영역 ──
+  const formBottom = mode === 'midpoint' && candidates.length > 0 && (
+    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mt-4">
+      {candidates.length === 2 && (
+        <div className="flex gap-2 mb-4">
+          {candidates.map((c, i) => (
+            <button
+              key={i}
+              onClick={() => setSelectedIdx(i)}
+              className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors
+                ${selectedIdx === i ? 'bg-amber-500 text-white' : 'bg-white text-amber-600 border border-amber-300 hover:bg-amber-50'}`}
+            >
+              {i + 1}위 {c.nearestStation || '중간지점'}
+            </button>
+          ))}
+        </div>
+      )}
+      <h2 className="text-lg font-bold text-amber-800 mb-1">
+        📍 {midpoint.nearestStation || '중간지점'}
+      </h2>
+      <p className="text-sm text-amber-700 mb-3">{midpoint.address}</p>
+      {midpoint.transitTimes && midpoint.transitTimes.length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs font-semibold text-amber-600 mb-1">🚇 대중교통 소요시간</p>
+          <div className="flex flex-col gap-1">
+            {midpoint.transitTimes.map((t, i) => (
+              <div key={i} className="flex justify-between text-xs text-amber-800">
+                <span>{t.userName}</span>
+                <span className="font-semibold">
+                  {t.durationSeconds > 0 ? formatSeconds(t.durationSeconds) : '-'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {descriptions[midpoint.rank] ? (
+        <p className="text-xs text-amber-700 bg-amber-100 rounded-lg px-3 py-2 mb-3">{descriptions[midpoint.rank]}</p>
+      ) : midpoint.nearestStation && (
+        <p className="text-xs text-amber-400 mb-3">AI 설명 생성 중...</p>
+      )}
+      {searchNote && (
+        <p className="text-xs text-amber-600 bg-amber-100 rounded-lg px-3 py-2 mb-3">{searchNote}</p>
+      )}
+    </div>
+  )
+
+  // ── 로딩 팝업 (공통) ──
+  const loadingPopup = loading && (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-xl w-72">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="text-center">
+          <p className="text-gray-800 font-semibold text-sm">{LOADING_STEPS[loadingStep].label}</p>
+          <p className="text-gray-400 text-xs mt-1">{LOADING_STEPS[loadingStep].sub}</p>
+        </div>
+        <div className="flex gap-1.5">
+          {LOADING_STEPS.map((_, i) => (
+            <div
+              key={i}
+              className={`h-1.5 rounded-full transition-all duration-500
+                ${i <= loadingStep ? 'bg-blue-500 w-6' : 'bg-gray-200 w-3'}`}
+            />
+          ))}
+        </div>
+        <button
+          onClick={() => abortRef.current?.abort()}
+          className="text-sm font-semibold text-red-500 border border-red-400 hover:bg-red-50 px-5 py-1.5 rounded-lg transition-colors"
+        >
+          취소
+        </button>
+      </div>
+    </div>
+  )
+
+  // ── PC 레이아웃 ──
+  if (isPC) {
+    return (
+      <div className="h-screen flex overflow-hidden bg-gray-50">
+
+        {/* 왼쪽: 지도 */}
+        <div className="flex-1 h-full">
+          <Map locations={mode === 'midpoint' ? users : [nearbyUser]} midpoint={midpoint} fillHeight />
+        </div>
+
+        {/* 오른쪽: 폼 + 결과 */}
+        <div className="w-[500px] h-screen flex-shrink-0 flex flex-col border-l border-gray-200 bg-gray-50 overflow-hidden">
+          <div className={`flex-1 overflow-y-auto px-6 py-8 ${candidates.length > 0 ? 'pb-24' : ''}`}>
+            {formTop}
+            {formBottom}
+          </div>
+
+          {/* 하단 고정 버튼 */}
+          {candidates.length > 0 && (
+            <div className="flex-shrink-0 px-6 pb-6 pt-3 bg-gradient-to-t from-gray-50 via-gray-50/90 to-transparent">
               <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-semibold py-3 rounded-xl transition-colors"
+                onClick={handleNext}
+                className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-colors text-base"
               >
-                {loading ? '계산 중...' : '중간지점 찾기'}
+                {midpoint.nearestStation || midpoint.address} 주변 추천 장소 보기 →
               </button>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-gray-500 mb-4">위치를 입력하면 주변 맛집·카페·명소를 찾아드려요</p>
-              <LocationInput
-                index={0}
-                value={nearbyUser}
-                onChange={(loc) => setNearbyUser(prev => ({ ...prev, ...loc }))}
-              />
-              {nearbyError && <p className="text-red-500 text-sm mb-3">{nearbyError}</p>}
-              <button
-                onClick={handleNearbySearch}
-                className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 rounded-xl transition-colors"
-              >
-                주변 장소 찾기
-              </button>
-            </>
+            </div>
           )}
         </div>
 
+        {loadingPopup}
+      </div>
+    )
+  }
+
+  // ── 모바일 레이아웃 ──
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className={`max-w-2xl mx-auto px-4 py-8 ${candidates.length > 0 ? 'pb-28' : ''}`}>
+        {formTop}
+
         {/* 지도 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">
-          <Map locations={mode === 'midpoint' ? users : [nearbyUser]} midpoint={midpoint} />
+        <div ref={resultRef} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">
+          <div className="h-[220px]">
+            <Map locations={mode === 'midpoint' ? users : [nearbyUser]} midpoint={midpoint} fillHeight />
+          </div>
         </div>
 
-        {/* 중간지점 결과 */}
-        {mode === 'midpoint' && candidates.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-
-            {/* 후보 탭 */}
-            {candidates.length === 2 && (
-              <div className="flex gap-2 mb-4">
-                {candidates.map((c, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setSelectedIdx(i)}
-                    className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors
-                      ${selectedIdx === i
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-white text-amber-600 border border-amber-300 hover:bg-amber-50'}`}
-                  >
-                    {i + 1}위 {c.nearestStation || '중간지점'}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <h2 className="text-lg font-bold text-amber-800 mb-1">
-              📍 {midpoint.nearestStation || '중간지점'}
-            </h2>
-            <p className="text-sm text-amber-700 mb-3">{midpoint.address}</p>
-
-            {midpoint.transitTimes && midpoint.transitTimes.length > 0 && (
-              <div className="mb-3">
-                <p className="text-xs font-semibold text-amber-600 mb-1">🚇 대중교통 소요시간</p>
-                <div className="flex flex-col gap-1">
-                  {midpoint.transitTimes.map((t, i) => (
-                    <div key={i} className="flex justify-between text-xs text-amber-800">
-                      <span>{t.userName}</span>
-                      <span className="font-semibold">
-                        {t.durationSeconds > 0 ? formatSeconds(t.durationSeconds) : '-'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {descriptions[midpoint.rank] ? (
-              <p className="text-xs text-amber-700 bg-amber-100 rounded-lg px-3 py-2 mb-3">{descriptions[midpoint.rank]}</p>
-            ) : midpoint.nearestStation && (
-              <p className="text-xs text-amber-400 mb-3">AI 설명 생성 중...</p>
-            )}
-            {searchNote && (
-              <p className="text-xs text-amber-600 bg-amber-100 rounded-lg px-3 py-2 mb-3">{searchNote}</p>
-            )}
-
-          </div>
-        )}
+        {formBottom}
       </div>
 
-      {/* 하단 고정 버튼: 결과가 있을 때만 표시 */}
+      {/* 하단 고정 버튼 */}
       {candidates.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-6 pt-3 bg-gradient-to-t from-gray-50 via-gray-50/90 to-transparent pointer-events-none">
           <div className="max-w-2xl mx-auto pointer-events-auto">
@@ -372,39 +446,13 @@ export default function Home() {
               onClick={handleNext}
               className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-colors text-base"
             >
-              주변 추천 장소 보기 →
+              {midpoint.nearestStation || midpoint.address} 주변 추천 장소 보기 →
             </button>
           </div>
         </div>
       )}
 
-      {/* 계산 중 로딩 팝업 */}
-      {loading && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-xl w-72">
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <div className="text-center">
-              <p className="text-gray-800 font-semibold text-sm">{LOADING_STEPS[loadingStep].label}</p>
-              <p className="text-gray-400 text-xs mt-1">{LOADING_STEPS[loadingStep].sub}</p>
-            </div>
-            <div className="flex gap-1.5">
-              {LOADING_STEPS.map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 rounded-full transition-all duration-500
-                    ${i <= loadingStep ? 'bg-blue-500 w-6' : 'bg-gray-200 w-3'}`}
-                />
-              ))}
-            </div>
-            <button
-              onClick={() => abortRef.current?.abort()}
-              className="text-sm font-semibold text-red-500 border border-red-400 hover:bg-red-50 px-5 py-1.5 rounded-lg transition-colors"
-            >
-              취소
-            </button>
-          </div>
-        </div>
-      )}
+      {loadingPopup}
     </div>
   )
 }

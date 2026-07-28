@@ -12,7 +12,7 @@ const CATEGORY_LABELS = {
   CT1: '문화시설',
 }
 
-export default function PlaceCard({ place, onClick, selected }) {
+export default function PlaceCard({ place, onClick, selected, onNavigate }) {
   const colorClass = CATEGORY_COLORS[place.categoryCode] || 'bg-gray-100 text-gray-600'
   const categoryLabel = CATEGORY_LABELS[place.categoryCode] || place.categoryCode
 
@@ -36,17 +36,27 @@ export default function PlaceCard({ place, onClick, selected }) {
             <p className="text-xs text-gray-400 mt-0.5">{place.phone}</p>
           )}
         </div>
-        {place.placeUrl && (
-          <a
-            href={place.placeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-500 font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-          >
-            상세보기
-          </a>
-        )}
+        <div className="flex flex-col gap-1.5 flex-shrink-0">
+          {place.placeUrl && (
+            <a
+              href={place.placeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-500 font-semibold px-3 py-1.5 rounded-lg transition-colors text-center"
+            >
+              상세보기
+            </a>
+          )}
+          {onNavigate && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onNavigate(place) }}
+              className="text-xs bg-green-50 hover:bg-green-100 text-green-600 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              길찾기
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
