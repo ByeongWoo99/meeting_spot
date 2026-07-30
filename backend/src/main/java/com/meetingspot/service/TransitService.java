@@ -19,6 +19,15 @@ import java.util.Optional;
 @Service
 public class TransitService {
 
+    public record TransitStats(int cacheHits, int apiCalls) {}
+    private static final ThreadLocal<int[]> statsHolder = ThreadLocal.withInitial(() -> new int[]{0, 0});
+
+    public static void resetStats() { statsHolder.set(new int[]{0, 0}); }
+    public static TransitStats getStats() {
+        int[] s = statsHolder.get();
+        return new TransitStats(s[0], s[1]);
+    }
+
     private final WebClient odsayWebClient;
     private final String apiKey;
     private final TransitCacheRepository transitCacheRepo;
@@ -236,8 +245,8 @@ public class TransitService {
 
         for (int i = 0; i < users.size(); i++) {
             MidpointRequest.LocationDto u = users.get(i);
-            double roundedLat = Math.round(u.getLat() * 100.0) / 100.0;
-            double roundedLng = Math.round(u.getLng() * 100.0) / 100.0;
+            double roundedLat = Math.round(u.getLat() * 1000.0) / 1000.0;
+            double roundedLng = Math.round(u.getLng() * 1000.0) / 1000.0;
 
             Optional<TransitCache> cached = transitCacheRepo
                     .findByOriginLatAndOriginLngAndStationName(roundedLat, roundedLng, stationName);
@@ -245,9 +254,11 @@ public class TransitService {
             if (cached.isPresent() && cached.get().getExpiresAt().isAfter(now)) {
                 durations[i] = cached.get().getDurationSec();
                 cacheHits++;
+                statsHolder.get()[0]++;
             } else {
                 Integer duration = getTransitDuration(u.getLng(), u.getLat(), stationLng, stationLat).block();
                 durations[i] = duration != null ? duration : -1;
+                statsHolder.get()[1]++;
 
                 TransitCache entry = TransitCache.builder()
                         .originLat(roundedLat)

@@ -8,10 +8,11 @@ import ShareModal from '../components/ShareModal'
 import { MARKER_COLORS } from '../utils/markerColors'
 import { fetchPlaces } from '../api/placeApi'
 import { fetchCarDirections } from '../api/directionApi'
-import { describeCandidate } from '../api/midpointApi'
+import { describeCandidate, sendEvent } from '../api/midpointApi'
 
 export default function Result() {
   const { state } = useLocation()
+  const sessionKey = state?.sessionKey
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [shareModal, setShareModal] = useState(null)
@@ -38,6 +39,7 @@ export default function Result() {
     } else {
       setNavPlace(place)
     }
+    sendEvent(sessionKey, 'PLACE_NAVIGATED', { place: place.name, category: place.categoryCode, station: midpoint?.nearestStation })
   }
 
   const { users: stateUsers = [], candidates: stateCandidates = [], selectedIdx: initIdx = 0, initialCategory = 'ALL', searchNote = null, descriptions: stateDescriptions = {} } = state || {}
@@ -77,6 +79,7 @@ export default function Result() {
       title: `📍 ${midpoint?.nearestStation || midpoint?.address}`,
       description: '중간지점 만남 장소 추천 결과를 확인해보세요!',
     })
+    sendEvent(sessionKey, 'RESULT_SHARED', { method: 'link' })
   }
 
   const [category, setCategory] = useState(initialCategory)
@@ -399,6 +402,7 @@ export default function Result() {
                         place={place}
                         selected={selectedPlace?.id === place.id}
                         onClick={(place) => { setSelectedPlace(place); setSheetState('collapsed') }}
+                        onDetail={(place) => sendEvent(sessionKey, 'PLACE_DETAILED', { place: place.name, category: place.categoryCode, station: midpoint?.nearestStation })}
                         onNavigate={handleNavigate}
                       />
                     ))}
@@ -506,6 +510,7 @@ export default function Result() {
                         place={place}
                         selected={selectedPlace?.id === place.id}
                         onClick={(place) => setSelectedPlace(place)}
+                        onDetail={(place) => sendEvent(sessionKey, 'PLACE_DETAILED', { place: place.name, category: place.categoryCode, station: midpoint?.nearestStation })}
                         onNavigate={handleNavigate}
                       />
                     ))}

@@ -34,6 +34,8 @@ export default function Home() {
   const [error, setError] = useState(null)
   const [errorIndices, setErrorIndices] = useState([])
 
+  const [sessionKey, setSessionKey] = useState(null)
+
   const [nearbyUser, setNearbyUser] = useState({ address: '', lat: null, lng: null })
   const [nearbyError, setNearbyError] = useState(null)
 
@@ -115,11 +117,13 @@ export default function Home() {
     setError(null)
     setLoading(true)
     abortRef.current = new AbortController()
+    const newSessionKey = crypto.randomUUID()
+    setSessionKey(newSessionKey)
     try {
       const locations = users
         .filter((u) => u.lat && u.lng)
         .map((u) => ({ name: u.name, lat: u.lat, lng: u.lng }))
-      const result = await calcMidpoint(locations, category, abortRef.current.signal)
+      const result = await calcMidpoint(locations, category, abortRef.current.signal, newSessionKey)
       setCandidates(result.candidates)
       setDescriptions({})
       setSearchNote(result.searchNote || null)
@@ -139,7 +143,7 @@ export default function Home() {
   }
 
   function handleNext() {
-    navigate('/result', { state: { users, candidates, selectedIdx, searchNote, descriptions } })
+    navigate('/result', { state: { users, candidates, selectedIdx, searchNote, descriptions, sessionKey } })
   }
 
   function handleNearbySearch() {
