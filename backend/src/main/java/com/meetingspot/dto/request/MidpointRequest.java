@@ -9,6 +9,8 @@ public class MidpointRequest {
 
     private List<LocationDto> locations;
     private String category = "ALL";
+    private String sessionKey;
+    private String parentSessionKey;
 
     @Data
     public static class LocationDto {

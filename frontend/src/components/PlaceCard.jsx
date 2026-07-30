@@ -12,7 +12,7 @@ const CATEGORY_LABELS = {
   CT1: '문화시설',
 }
 
-export default function PlaceCard({ place, onClick, selected, onNavigate }) {
+export default function PlaceCard({ place, onClick, selected, onNavigate, onDetail }) {
   const colorClass = CATEGORY_COLORS[place.categoryCode] || 'bg-gray-100 text-gray-600'
   const categoryLabel = CATEGORY_LABELS[place.categoryCode] || place.categoryCode
 
@@ -42,7 +42,7 @@ export default function PlaceCard({ place, onClick, selected, onNavigate }) {
               href={place.placeUrl}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onDetail?.(place) }}
               className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-500 font-semibold px-3 py-1.5 rounded-lg transition-colors text-center"
             >
               상세보기
