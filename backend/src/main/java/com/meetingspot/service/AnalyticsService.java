@@ -86,7 +86,7 @@ public class AnalyticsService {
         }
     }
 
-    private UUID parseOrGenerateUUID(String sessionKey) {
+    UUID parseOrGenerateUUID(String sessionKey) {
         if (sessionKey != null && !sessionKey.isBlank()) {
             try { return UUID.fromString(sessionKey); } catch (IllegalArgumentException ignored) {}
         }
@@ -102,14 +102,14 @@ public class AnalyticsService {
         }
     }
 
-    private String determineStatus(MidpointResponse response) {
+    String determineStatus(MidpointResponse response) {
         if (response == null || response.getCandidates() == null || response.getCandidates().isEmpty()) {
             return "NO_RESULT";
         }
         return "SUCCESS";
     }
 
-    private String determineRegion(List<MidpointRequest.LocationDto> locations) {
+    String determineRegion(List<MidpointRequest.LocationDto> locations) {
         if (locations == null || locations.isEmpty()) return null;
         double avgLat = locations.stream().mapToDouble(MidpointRequest.LocationDto::getLat).average().orElse(0);
         double avgLng = locations.stream().mapToDouble(MidpointRequest.LocationDto::getLng).average().orElse(0);
@@ -126,7 +126,7 @@ public class AnalyticsService {
         }
     }
 
-    private Double calculateFairnessScore(List<MidpointResponse.UserTransitTime> transitTimes) {
+    Double calculateFairnessScore(List<MidpointResponse.UserTransitTime> transitTimes) {
         IntSummaryStatistics stats = transitTimes.stream()
                 .mapToInt(MidpointResponse.UserTransitTime::getDurationSeconds)
                 .filter(d -> d >= 0)
