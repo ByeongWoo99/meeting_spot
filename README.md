@@ -23,8 +23,8 @@
 
 | 구분 | 기술 |
 |---|---|
-| 프론트엔드 | React 18, Vite, Tailwind CSS |
-| 백엔드 | Spring Boot 3.5, Java 17, Spring Data JPA |
+| 프론트엔드 | React 19, Vite 8, Tailwind CSS 3, React Router DOM 7, Axios |
+| 백엔드 | Spring Boot 3.5, Java 17, Spring Data JPA, Spring WebFlux, Lombok |
 | DB | PostgreSQL |
 | 외부 API | 카카오맵 JS SDK, 카카오 로컬 API, 카카오 모빌리티 API, OdSay 대중교통 API, Gemini API |
 | 인프라 | AWS EC2, GitHub Actions CI/CD |
@@ -77,7 +77,10 @@ cd backend
 ./gradlew bootRun
 ```
 
-서버 실행 시 JPA가 `transit_cache`, `place_cache` 테이블을 자동 생성합니다.
+서버 실행 시 JPA가 아래 테이블을 자동 생성합니다.
+
+- `transit_cache`, `place_cache` — API 응답 캐시
+- `search_session`, `station_result`, `user_transit_result`, `search_event` — 사용자 행동 분석
 
 ## 캐싱 구조
 
