@@ -135,7 +135,8 @@ export default function Home() {
       })
     } catch (e) {
       if (!axios.isCancel(e) && e.name !== 'CanceledError') {
-        setError('일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
+        const message = e.response?.data?.message || '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+        setError(message)
       }
     } finally {
       setLoading(false)

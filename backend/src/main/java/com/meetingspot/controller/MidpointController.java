@@ -6,6 +6,7 @@ import com.meetingspot.service.AnalyticsService;
 import com.meetingspot.service.GeminiService;
 import com.meetingspot.service.MidpointService;
 import com.meetingspot.service.TransitService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -24,7 +25,7 @@ public class MidpointController {
     private final AnalyticsService analyticsService;
 
     @PostMapping
-    public MidpointResponse calculate(@RequestBody MidpointRequest request) {
+    public MidpointResponse calculate(@Valid @RequestBody MidpointRequest request) {
         long start = System.currentTimeMillis();
         TransitService.resetStats();
         MidpointResponse response = midpointService.calculate(request);
