@@ -117,7 +117,12 @@ export default function Home() {
     setError(null)
     setLoading(true)
     abortRef.current = new AbortController()
-    const newSessionKey = crypto.randomUUID()
+    const newSessionKey = crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+        })
     setSessionKey(newSessionKey)
     try {
       const locations = users
