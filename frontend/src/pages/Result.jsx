@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Map from '../components/Map'
 import CategoryFilter from '../components/CategoryFilter'
@@ -48,19 +48,20 @@ export default function Result() {
   const urlActiveIdx = isSharedView ? parseInt(searchParams.get('activeIdx') || '0') : initIdx
   const [activeIdx, setActiveIdx] = useState(urlActiveIdx)
 
-  const candidates = useMemo(() => {
-    if (stateCandidates.length > 0) return stateCandidates
+  // URL 파라미터를 마운트 시 1회만 파싱 — useMemo+JSON.parse는 매 렌더마다 새 참조를 만들어
+  // midpoint → useEffect([midpoint]) 무한 루프를 유발하므로 useState lazy init으로 고정
+  const [urlCandidates] = useState(() => {
     const param = searchParams.get('candidates')
     return param ? JSON.parse(param) : []
-  }, [searchParams, stateCandidates])
-
-  const midpoint = candidates[activeIdx] || null
-
-  const users = useMemo(() => {
-    if (!isSharedView) return stateUsers
+  })
+  const [urlUsers] = useState(() => {
     const usersParam = searchParams.get('users')
     return usersParam ? JSON.parse(usersParam) : []
-  }, [isSharedView, searchParams, stateUsers])
+  })
+
+  const candidates = stateCandidates.length > 0 ? stateCandidates : urlCandidates
+  const midpoint = candidates[activeIdx] || null
+  const users = isSharedView ? urlUsers : stateUsers
 
   const isNearbyMode = users.length === 1
 
