@@ -93,6 +93,29 @@ cd backend
 
 캐싱 적용 후 평균 응답시간: **2,889ms → 258ms (91% 단축)**
 
+## API 에러 응답
+
+모든 API 오류는 아래 형식으로 일관되게 반환됩니다.
+
+```json
+{
+  "code": "INVALID_REQUEST",
+  "message": "출발지는 2~4명이어야 합니다."
+}
+```
+
+| HTTP 상태 | code | 발생 상황 |
+|---|---|---|
+| 400 | `INVALID_REQUEST` | 요청 형식 오류, 입력값 검증 실패, 파라미터 누락 |
+| 405 | `METHOD_NOT_ALLOWED` | 지원하지 않는 HTTP 메서드 |
+| 500 | `INTERNAL_ERROR` | 서버 내부 오류 |
+
+`POST /api/midpoint` 요청 시 아래 항목을 검증합니다.
+
+- `locations`: 필수, 2~4명
+- `locations[].lat`: 필수, 국내 위도 범위 (33.0 ~ 38.9)
+- `locations[].lng`: 필수, 국내 경도 범위 (124.6 ~ 132.0)
+
 ## CI/CD
 
 `main` 브랜치에 push 시 GitHub Actions가 자동으로 빌드 및 EC2 배포를 수행합니다.
